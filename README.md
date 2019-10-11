@@ -1,6 +1,6 @@
 # Hemodialysis
-MLP 데이터 생성 및 MLP 모델 학습
-현재 regression 과 classification 까지 학습 가능
+MLP 데이터 생성 및 MLP 모델 학습   
+현재 regression 과 classification 까지 학습 가능   
 Classification 은 학습까지만 완성 (메트릭, 로깅 등 아직 미완성)
 
 ## Directory layout 
