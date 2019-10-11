@@ -51,6 +51,9 @@ class HemodialysisDataset():
                 df = df.drop('ID_class', axis=1)
                 df = np.array(df).astype('float')
                 torch.save(df, '{}_{}.pt'.format(self.model_type, type))
+        if not save:
+            self.hemodialysis_frame.drop('ID_class', axis=1, inplace=True)
+            np.array(self.hemodialysis_frame).astype('float')
 
     def split_train_test(self):
         print("Splitting...")
@@ -58,7 +61,7 @@ class HemodialysisDataset():
         key = self.hemodialysis_frame['ID_hd'].unique()
         idx = np.random.permutation(range(len(key)))
         train_split, val_split = int(np.floor(0.7 * len(key))), int(np.floor(0.8 * len(key)))
-        train_idx, val_idx, test_idx = idx[:train_split], idx[tra        # torch.save(dataset.hemodialysis_frame, 'Final_{}.pt'.format(i))in_split:val_split], idx[val_split:]
+        train_idx, val_idx, test_idx = idx[:train_split], idx[train_split:val_split], idx[val_split:]
         training_type = pd.DataFrame(data=key, columns=['ID_hd'])
         training_type['ID_class'] = 0; training_type.loc[train_idx, 'ID_class'] = 'Train'; training_type.loc[val_idx, 'ID_class'] = 'Validation'; training_type.loc[test_idx, 'ID_class'] = 'Test'
         self.hemodialysis_frame = training_type.merge(self.hemodialysis_frame, how='inner', left_on=["ID_hd"], right_on=["ID_hd"])
@@ -131,24 +134,24 @@ class HemodialysisDataset():
         def eval_target(diff, type):
             if type == 'sbp':
                 if diff < -20 :
-                    return 1
+                    return 0
                 if diff < -10 :
-                    return 2
+                    return 1
                 if diff < -5 :
-                    return 3
+                    return 2
                 if diff < 5 :
-                    return 4
+                    return 3
                 else:
-                    return 5
+                    return 4
             if type == 'dbp':
                 if diff < -10:
-                    return 1
+                    return 0
                 if diff < -5:
-                    return 2
+                    return 1
                 if diff < 5:
-                    return 3
+                    return 2
                 else:
-                    return 4
+                    return 3
 
         self.hemodialysis_frame['VS_sbp_target_class'] = ((self.hemodialysis_frame['VS_sbp_target'] - self.hemodialysis_frame['VS_sbp']) * self.std_for_normalize['VS_sbp']).apply(lambda x: eval_target(x,'sbp'))
         self.hemodialysis_frame['VS_dbp_target_class'] = ((self.hemodialysis_frame['VS_dbp_target'] - self.hemodialysis_frame['VS_dbp']) * self.std_for_normalize['VS_dbp']).apply(lambda x: eval_target(x,'dbp'))
@@ -158,7 +161,7 @@ def make_data():
     path ='raw_data/'
     files = ['Hemodialysis1_1003.csv','Hemodialysis2_1003.csv']
     # files = ['sample.csv']
-    dataset = HemodialysisDataset(path,files,'MLP', save=True)
+    dataset = HemodialysisDataset(path,files,'MLP', save=False)
     return dataset
 
 
