@@ -3,10 +3,14 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$" />
 <<<<<<< HEAD
+<<<<<<< HEAD
     <orderEntry type="jdk" jdkName="Python 3.6 (venv)" jdkType="Python SDK" />
 =======
     <orderEntry type="jdk" jdkName="Python 3.7 (torch)" jdkType="Python SDK" />
 >>>>>>> logging, sbp&dbp training
+=======
+    <orderEntry type="jdk" jdkName="Python 3.6 (venv)" jdkType="Python SDK" />
+>>>>>>> feat: make rnn dataset & model
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TestRunnerService">
