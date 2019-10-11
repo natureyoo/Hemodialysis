@@ -18,7 +18,7 @@ class HemodialysisDataset():
         self.columns = []
         self.mean_for_normalize = {}
         self.std_for_normalize = {}
-        self.init_value = pd.DataFrame()
+        # self.init_value = pd.DataFrame()
         self.sbp_diff = -20
         self.dbp_diff = -10
         self.seed= 212
@@ -39,21 +39,30 @@ class HemodialysisDataset():
         # self.hemodialysis_frame = self.hemodialysis_frame.loc[self.hemodialysis_frame.ID_class == self.training_type]
         if self.model_type == 'MLP':
             self.concat_history()
-            self.columns = list(self.hemodialysis_frame.columns)
         else:
             self.make_sequence()
-            self.hemodialysis_frame = self.total_seq
+            self.add_pre_hemodialysis()
+            self.order_target_column()
         self.split_train_test()
+        self.columns = list(filter(lambda x: x not in ['ID_class', 'ID_hd'], self.hemodialysis_frame.columns))
         if save:
             print("Saving...")
             for type in ['Train', 'Validation', 'Test']:
                 df = self.hemodialysis_frame.loc[self.hemodialysis_frame.ID_class == type].copy()
                 df = df.drop('ID_class', axis=1)
-                df = np.array(df).astype('float')
+                if self.model_type == 'MLP':
+                    df = df.drop('ID_hd', axis=1)
+                    df = np.array(df).astype('float')
+                else:
+                    df = self.convert_to_sequence(df)
                 torch.save(df, '{}_{}.pt'.format(self.model_type, type))
         if not save:
             self.hemodialysis_frame.drop('ID_class', axis=1, inplace=True)
-            np.array(self.hemodialysis_frame).astype('float')
+            if self.model_type == 'MLP':
+                np.array(self.hemodialysis_frame).astype('float')
+            else:
+                self.hemodialysis_frame = self.convert_to_sequence(self.hemodialysis_frame)
+
 
     def split_train_test(self):
         print("Splitting...")
@@ -65,11 +74,14 @@ class HemodialysisDataset():
         training_type = pd.DataFrame(data=key, columns=['ID_hd'])
         training_type['ID_class'] = 0; training_type.loc[train_idx, 'ID_class'] = 'Train'; training_type.loc[val_idx, 'ID_class'] = 'Validation'; training_type.loc[test_idx, 'ID_class'] = 'Test'
         self.hemodialysis_frame = training_type.merge(self.hemodialysis_frame, how='inner', left_on=["ID_hd"], right_on=["ID_hd"])
-        self.hemodialysis_frame.drop(labels=['ID_hd'], axis=1, inplace=True)
 
     def refine_dataset(self):
+        self.hemodialysis_frame['Pt_id'] = [x.replace('*', '') for x in self.hemodialysis_frame['Pt_id']]
+        self.hemodialysis_frame['Pt_id'] = self.hemodialysis_frame['Pt_id'].astype(str).astype(int)
+        self.hemodialysis_frame['ID_hd'] = [x.replace('*', '') for x in self.hemodialysis_frame['ID_hd']]
+        self.hemodialysis_frame['ID_hd'] = self.hemodialysis_frame['ID_hd'].astype(str).astype(int)
         categorical = ['HD_type','HD_acces','HD_prim','HD_dialysate','HD_dialyzer']
-        drop_columns = ['Pt_id', 'VS_rr']
+        drop_columns = ['VS_rr', 'Time']
         self.hemodialysis_frame.drop(labels=drop_columns, inplace=True, axis=1)
         timestamp = pd.to_datetime(self.hemodialysis_frame['HD_duration']).dt
         self.hemodialysis_frame['HD_duration'] = timestamp.hour * 60 + timestamp.minute
@@ -80,10 +92,11 @@ class HemodialysisDataset():
 
     def concat_history(self):
         print("Concating...")
+        self.hemodialysis_frame.drop(labels=['Pt_id'], axis=1, inplace=True)
         self.hemodialysis_frame['time'] = [dt.datetime.strptime(x[10:], '%Y%m%d*%H%M') for x in self.hemodialysis_frame['ID_timeline']]
         self.hemodialysis_frame['prev_time'] = self.hemodialysis_frame.apply(lambda x: x.time - dt.timedelta(minutes=x.HD_ntime_raw), axis=1)
         prev_data = self.hemodialysis_frame.copy()
-        target_data = self.hemodialysis_frame.loc[self.hemodialysis_frame.HD_ctime_raw > 0][['ID_hd',    'prev_time', 'HD_ntime', 'VS_sbp', 'VS_dbp']]
+        target_data = self.hemodialysis_frame.loc[self.hemodialysis_frame.HD_ctime_raw > 0][['ID_hd','prev_time', 'HD_ntime', 'VS_sbp', 'VS_dbp']]
         init_data = self.hemodialysis_frame.loc[self.hemodialysis_frame.HD_ctime_raw == 0][['ID_hd', 'VS_sbp', 'VS_dbp']]
         self.hemodialysis_frame = self.hemodialysis_frame.merge(prev_data, how='inner', left_on=['ID_hd', 'prev_time'], right_on=['ID_hd', 'time'], suffixes=('', '_prev'))
         self.hemodialysis_frame = self.hemodialysis_frame.merge(target_data, how='inner', left_on=['ID_hd', 'time'], right_on=['ID_hd', 'prev_time'], suffixes=('', '_target'))
@@ -91,7 +104,7 @@ class HemodialysisDataset():
         drop_columns_for_learning = ['ID_timeline', 'HD_ctime_raw', 'HD_ntime_raw', 'time', 'prev_time', 'Pt_sex_prev', 'Pt_age_prev', 'ID_timeline_prev', 'time_prev', 'prev_time_prev', 'prev_time_target']
         self.hemodialysis_frame.drop(labels=drop_columns_for_learning, axis=1, inplace=True)
         self.add_target_class()
-        self.init_value = self.hemodialysis_frame[['VS_sbp_init', 'VS_dbp_init']]
+        # self.init_value = self.hemodialysis_frame[['VS_sbp_init', 'VS_dbp_init']]
 
     def make_sequence(self):
         self.hemodialysis_frame['time'] = [dt.datetime.strptime(x[10:], '%Y%m%d*%H%M') for x in self.hemodialysis_frame['ID_timeline']]
@@ -101,21 +114,9 @@ class HemodialysisDataset():
         self.hemodialysis_frame = self.hemodialysis_frame.merge(target_data, how='inner', left_on=['ID_hd', 'time'], right_on=['ID_hd', 'prev_time'], suffixes=('', '_target'))
         self.hemodialysis_frame = init_data.merge(self.hemodialysis_frame, how='inner', on=['ID_hd'], suffixes=('_init', ''))
 
-        drop_columns = ['ID_timeline', 'HD_ntime_raw', 'HD_ctime_raw', 'time', 'prev_time', 'prev_time_target']
+        drop_columns = ['ID_timeline', 'HD_ntime_raw', 'time', 'prev_time', 'prev_time_target']
         self.hemodialysis_frame.drop(labels=drop_columns, axis=1, inplace=True)
         self.add_target_class()
-
-        grouped = self.hemodialysis_frame.groupby('ID_hd')
-        unique = self.hemodialysis_frame['ID_hd'].unique()
-        # simple_columns = ['Pt_sex', 'Pt_age', 'HD_ctime', 'VS_sbp', 'VS_dbp', 'VS_hr', 'VS_bt', 'VS_bfr', 'VS_uft', 'HD_ntime_target', 'VS_sbp_target', 'VS_dbp_target']
-
-        for id_ in unique:
-            seq = grouped.get_group(id_)
-            self.columns = seq.columns
-            self.total_seq.append(seq.values.tolist())
-
-        #self.total_seq = np.asarray(self.total_seq)
-        self.total_seq = np.array([np.array(i) for i in self.total_seq])
 
     def normalize(self):
         print('Normalizing...')
@@ -161,12 +162,51 @@ class HemodialysisDataset():
         self.hemodialysis_frame['VS_sbp_target_class'] = ((self.hemodialysis_frame['VS_sbp_target'] - self.hemodialysis_frame['VS_sbp']) * self.std_for_normalize['VS_sbp']).apply(lambda x: eval_target(x,'sbp'))
         self.hemodialysis_frame['VS_dbp_target_class'] = ((self.hemodialysis_frame['VS_dbp_target'] - self.hemodialysis_frame['VS_dbp']) * self.std_for_normalize['VS_dbp']).apply(lambda x: eval_target(x,'dbp'))
 
+    def add_pre_hemodialysis(self):
+        def merge_pre(frame):
+            min_bp = frame.groupby(['Pt_id', 'ID_hd'])['VS_sbp', 'VS_dbp'].min().reset_index()
+            max_bp = frame.groupby(['Pt_id', 'ID_hd'])['VS_sbp', 'VS_dbp'].max().reset_index()
+            init_bp = frame.loc[frame.HD_ctime_raw == 0][['Pt_id', 'ID_hd', 'VS_sbp', 'VS_dbp']]
+            init_bp.columns = ['Pt_id', 'ID_hd', 'VS_sbp_init_in_pre_hd', 'VS_dbp_init_in_pre_hd']
+            pre_hd = min_bp.merge(max_bp, how='inner', on=['Pt_id', 'ID_hd'], suffixes=('_min_in_pre_hd', '_max_in_pre_hd'))
+            pre_hd = init_bp.merge(pre_hd, how='inner', on=['Pt_id', 'ID_hd'])
+            pre_hd['rank'] = pre_hd.sort_values(['Pt_id', 'ID_hd'], ascending=[True, True]).groupby(['Pt_id']).cumcount() + 1
+            del min_bp, max_bp, init_bp
+            frame = frame.merge(pre_hd[['Pt_id', 'ID_hd', 'rank']], on=['Pt_id', 'ID_hd'], how='inner')
+            frame['rank'] -= 1
+            frame = frame.merge(pre_hd, on=['Pt_id', 'rank'], how='left', suffixes=('', '_pre'))
+            frame['pre_hd'] = [0 if np.isnan(x) else 1 for x in frame['VS_sbp_min_in_pre_hd']]
+            frame.drop(labels=['Pt_id', 'rank', 'ID_hd_pre', 'HD_ctime_raw'], axis=1, inplace=True)
+            frame.fillna(0.0, inplace=True)
+            return frame
+        self.hemodialysis_frame = merge_pre(self.hemodialysis_frame)
+
+    def order_target_column(self):
+        target_columns = ['VS_sbp_target', 'VS_dbp_target', 'VS_sbp_target_class', 'VS_dbp_target_class']
+        input_columns = self.hemodialysis_frame.columns[
+            [False if x in target_columns else True for x in self.hemodialysis_frame.columns]].to_list()
+        self.hemodialysis_frame = self.hemodialysis_frame[input_columns + target_columns]
+
+    def convert_to_sequence(self, df):
+        grouped = df.sort_values(['ID_hd', 'HD_ctime'], ascending=[True,True]).groupby('ID_hd')
+        unique = df['ID_hd'].unique()
+        for id_ in unique:
+            seq = grouped.get_group(id_)  # dataframe type
+            seq.drop('ID_hd', axis=1, inplace=True)
+            self.total_seq.append(seq.values.tolist())
+
+        self.total_seq = np.array([np.array(i) for i in self.total_seq])
+        return np.asarray(self.total_seq)
 
 def make_data():
-    path ='raw_data/'
-    files = ['Hemodialysis1_1003.csv','Hemodialysis2_1003.csv']
+    path ='/home/jayeon/Documents/code/Hemodialysis/data' #raw_data
+    files = ['Hemodialysis1_1007.csv','Hemodialysis2_1007.csv']
     # files = ['sample.csv']
+<<<<<<< HEAD:src/csv_parser.py
     dataset = HemodialysisDataset(path,files,'MLP', save=True)
+=======
+    dataset = HemodialysisDataset(path,files,'RNN', save=True)
+>>>>>>> feat: make rnn dataset & model:csv_parser.py
     return dataset
 
 
