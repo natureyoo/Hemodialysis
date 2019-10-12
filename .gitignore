@@ -5,6 +5,7 @@
 ### data ###
 *.pt
 data/
+tensor_data/
 
 ### Linux ###
 *~

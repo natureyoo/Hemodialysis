@@ -55,7 +55,9 @@ class HemodialysisDataset():
                     df = np.array(df).astype('float')
                 else:
                     df = self.convert_to_sequence(df)
-                torch.save(df, '{}_{}.pt'.format(self.model_type, type))
+                if not(os.path.isdir('tensor_data/RNN')):
+                    os.makedirs(os.path.join('tensor_data/RNN'))
+                torch.save(df, './tensor_data/{}/{}.pt'.format(self.model_type, type))
         if not save:
             self.hemodialysis_frame.drop('ID_class', axis=1, inplace=True)
             if self.model_type == 'MLP':
@@ -122,7 +124,7 @@ class HemodialysisDataset():
         print('Normalizing...')
         self.hemodialysis_frame['HD_ctime_raw'] = self.hemodialysis_frame['HD_ctime']
         self.hemodialysis_frame['HD_ntime_raw'] = self.hemodialysis_frame['HD_ntime']
-        numerical_col = ['Pt_age', 'HD_ntime', 'HD_ctime', 'HD_prewt', 'HD_uf', 'VS_sbp', 'VS_dbp', 'VS_hr', 'VS_bt', 'VS_bfr', 'VS_uft', 'Lab_wbc', 'Lab_hb', 'Lab_plt', 'Lab_chol', 'Lab_alb', 'Lab_glu', 'Lab_ca', 'Lab_phos', 'Lab_ua', 'Lab_bun', 'Lab_scr', 'Lab_na', 'Lab_k', 'Lab_cl', 'Lab_co2']
+        numerical_col = ['Pt_age', 'HD_duration', 'HD_ntime', 'HD_ctime', 'HD_prewt', 'HD_uf', 'VS_sbp', 'VS_dbp', 'VS_hr', 'VS_bt', 'VS_bfr', 'VS_uft', 'Lab_wbc', 'Lab_hb', 'Lab_plt', 'Lab_chol', 'Lab_alb', 'Lab_glu', 'Lab_ca', 'Lab_phos', 'Lab_ua', 'Lab_bun', 'Lab_scr', 'Lab_na', 'Lab_k', 'Lab_cl', 'Lab_co2']
         for col in numerical_col:
             self.mean_for_normalize[col] = self.hemodialysis_frame[col].mean()
             self.std_for_normalize[col] = self.hemodialysis_frame[col].std()
@@ -130,6 +132,7 @@ class HemodialysisDataset():
                 self.hemodialysis_frame[col] = (self.hemodialysis_frame[col] - self.mean_for_normalize[col]) / self.std_for_normalize[col]
             else:
                 self.hemodialysis_frame[col] = 0
+
 
     def add_target_class(self):
         def eval_target(diff, type):
@@ -157,30 +160,29 @@ class HemodialysisDataset():
         self.hemodialysis_frame['VS_sbp_target_class'] = ((self.hemodialysis_frame['VS_sbp_target'] - self.hemodialysis_frame['VS_sbp']) * self.std_for_normalize['VS_sbp']).apply(lambda x: eval_target(x,'sbp'))
         self.hemodialysis_frame['VS_dbp_target_class'] = ((self.hemodialysis_frame['VS_dbp_target'] - self.hemodialysis_frame['VS_dbp']) * self.std_for_normalize['VS_dbp']).apply(lambda x: eval_target(x,'dbp'))
 
+
     def add_pre_hemodialysis(self):
-        def merge_pre(frame):
-            min_bp = frame.groupby(['Pt_id', 'ID_hd'])['VS_sbp', 'VS_dbp'].min().reset_index()
-            max_bp = frame.groupby(['Pt_id', 'ID_hd'])['VS_sbp', 'VS_dbp'].max().reset_index()
-            init_bp = frame.loc[frame.HD_ctime_raw == 0][['Pt_id', 'ID_hd', 'VS_sbp', 'VS_dbp']]
-            init_bp.columns = ['Pt_id', 'ID_hd', 'VS_sbp_init_in_pre_hd', 'VS_dbp_init_in_pre_hd']
-            pre_hd = min_bp.merge(max_bp, how='inner', on=['Pt_id', 'ID_hd'], suffixes=('_min_in_pre_hd', '_max_in_pre_hd'))
-            pre_hd = init_bp.merge(pre_hd, how='inner', on=['Pt_id', 'ID_hd'])
-            pre_hd['rank'] = pre_hd.sort_values(['Pt_id', 'ID_hd'], ascending=[True, True]).groupby(['Pt_id']).cumcount() + 1
-            del min_bp, max_bp, init_bp
-            frame = frame.merge(pre_hd[['Pt_id', 'ID_hd', 'rank']], on=['Pt_id', 'ID_hd'], how='inner')
-            frame['rank'] -= 1
-            frame = frame.merge(pre_hd, on=['Pt_id', 'rank'], how='left', suffixes=('', '_pre'))
-            frame['pre_hd'] = [0 if np.isnan(x) else 1 for x in frame['VS_sbp_min_in_pre_hd']]
-            frame.drop(labels=['Pt_id', 'rank', 'ID_hd_pre', 'HD_ctime_raw'], axis=1, inplace=True)
-            frame.fillna(0.0, inplace=True)
-            return frame
-        self.hemodialysis_frame = merge_pre(self.hemodialysis_frame)
+        min_bp = self.hemodialysis_frame.groupby(['Pt_id', 'ID_hd'])['VS_sbp', 'VS_dbp'].min().reset_index()
+        max_bp = self.hemodialysis_frame.groupby(['Pt_id', 'ID_hd'])['VS_sbp', 'VS_dbp'].max().reset_index()
+        init_bp = self.hemodialysis_frame.loc[self.hemodialysis_frame.HD_ctime_raw == 0][['Pt_id', 'ID_hd', 'VS_sbp', 'VS_dbp']]
+        init_bp.columns = ['Pt_id', 'ID_hd', 'VS_sbp_init_in_pre_hd', 'VS_dbp_init_in_pre_hd']
+        pre_hd = min_bp.merge(max_bp, how='inner', on=['Pt_id', 'ID_hd'], suffixes=('_min_in_pre_hd', '_max_in_pre_hd'))
+        pre_hd = init_bp.merge(pre_hd, how='inner', on=['Pt_id', 'ID_hd'])
+        pre_hd['rank'] = pre_hd.sort_values(['Pt_id', 'ID_hd'], ascending=[True, True]).groupby(['Pt_id']).cumcount() + 1
+        self.hemodialysis_frame = self.hemodialysis_frame.merge(pre_hd[['Pt_id', 'ID_hd', 'rank']],on=['Pt_id', 'ID_hd'], how='inner')
+        self.hemodialysis_frame['rank'] -= 1
+        self.hemodialysis_frame = self.hemodialysis_frame.merge(pre_hd, on=['Pt_id', 'rank'], how='left', suffixes=('', '_pre'))
+        self.hemodialysis_frame['pre_hd'] = [0 if np.isnan(x) else 1 for x in self.hemodialysis_frame['VS_sbp_min_in_pre_hd']]
+        self.hemodialysis_frame.drop(labels=['Pt_id', 'rank', 'ID_hd_pre', 'HD_ctime_raw'], axis=1, inplace=True)
+        self.hemodialysis_frame.fillna(0.0, inplace=True)
+
 
     def order_target_column(self):
         target_columns = ['VS_sbp_target', 'VS_dbp_target', 'VS_sbp_target_class', 'VS_dbp_target_class']
         input_columns = self.hemodialysis_frame.columns[
             [False if x in target_columns else True for x in self.hemodialysis_frame.columns]].to_list()
         self.hemodialysis_frame = self.hemodialysis_frame[input_columns + target_columns]
+
 
     def convert_to_sequence(self, df):
         grouped = df.sort_values(['ID_hd', 'HD_ctime'], ascending=[True,True]).groupby('ID_hd')
@@ -190,8 +192,9 @@ class HemodialysisDataset():
             seq.drop('ID_hd', axis=1, inplace=True)
             self.total_seq.append(seq.values.tolist())
 
-        self.total_seq = np.array([np.array(i) for i in self.total_seq])
-        return np.asarray(self.total_seq)
+        self.total_seq = [np.array(i) for i in self.total_seq]
+        return np.array(self.total_seq)
+
 
 def make_data():
     path ='/home/jayeon/Documents/code/Hemodialysis/data' #raw_data
