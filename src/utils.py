@@ -171,18 +171,19 @@ def eval_rnn(loader, model, device, output_size, criterion=nn.L1Loss(reduction="
         # Initialize
         flattened_y = y[0,:seq_len[0]].view(-1,output_size)
         # print("flattened_y", flattened_y.size())
-        flattened_output = outputs[0,:seq_len[0],:].view(-1,output_size)
+        flattened_output = outputs[:seq_len[0],0,:].view(-1,output_size)
         # print("flattened_output", flattened_output.size())
 
         for idx,seq in enumerate(seq_len[1:]):
             # print("Output of single batch:", outputs[idx+1,:seq,:].size())
-            flattened_output = torch.cat([flattened_output,outputs[idx+1,:seq,:].view(-1,output_size)], dim=0)
-            flattened_y = torch.cat((flattened_y,y[idx+1,:seq].view(-1,output_size)), dim=0)
+            flattened_output = torch.cat([flattened_output,outputs[:seq,idx+1,:].view(-1,output_size)], dim=0)
+            flattened_y = torch.cat((flattened_y,y[idx+1,:seq,:].view(-1,output_size)), dim=0)
 
         loss = criterion(flattened_y, flattened_output)
-        total += seq_len.sum().item()
+        total += len(seq_len)
         running_loss += loss
     print("Validation Loss : {:.4f} \n".format(running_loss/total))
+    return running_loss, total
 
 def confusion_matrix(preds, labels, n_classes):
 
