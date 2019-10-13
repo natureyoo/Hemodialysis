@@ -166,6 +166,7 @@ class HemodialysisDataset():
                     return 5
                 else:
                     return 6
+            
             if type == 'dbp':
                 if diff < -10:
                     return 0
@@ -220,9 +221,16 @@ class HemodialysisDataset():
 
 
 def make_data():
+<<<<<<< HEAD
     path ='/home/jayeon/Documents/code/Hemodialysis/data' # raw_data
     files = ['Hemodialysis1_1007.csv','Hemodialysis2_1007.csv'] # ['sample.csv']
     dataset = HemodialysisDataset(path, files, 'RNN', save=True)
+=======
+    path ='raw_data/'
+    files = ['Hemodialysis1_1003.csv','Hemodialysis2_1003.csv']
+    # files = ['sample.csv']
+    dataset = HemodialysisDataset(path,files,'MLP', save=True)
+>>>>>>> num_classes refined
     return dataset
 
 
