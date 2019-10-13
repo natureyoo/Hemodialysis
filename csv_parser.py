@@ -141,8 +141,11 @@ class HemodialysisDataset():
                     return 2
                 if diff < 5 :
                     return 3
-                else:
+                if diff < 15:
                     return 4
+                else:
+                    return 5
+
             if type == 'dbp':
                 if diff < -10:
                     return 0
@@ -150,8 +153,10 @@ class HemodialysisDataset():
                     return 1
                 if diff < 5:
                     return 2
-                else:
+                if diff < 10:
                     return 3
+                else:
+                    return 4
 
         self.hemodialysis_frame['VS_sbp_target_class'] = ((self.hemodialysis_frame['VS_sbp_target'] - self.hemodialysis_frame['VS_sbp']) * self.std_for_normalize['VS_sbp']).apply(lambda x: eval_target(x,'sbp'))
         self.hemodialysis_frame['VS_dbp_target_class'] = ((self.hemodialysis_frame['VS_dbp_target'] - self.hemodialysis_frame['VS_dbp']) * self.std_for_normalize['VS_dbp']).apply(lambda x: eval_target(x,'dbp'))
@@ -161,7 +166,7 @@ def make_data():
     path ='raw_data/'
     files = ['Hemodialysis1_1003.csv','Hemodialysis2_1003.csv']
     # files = ['sample.csv']
-    dataset = HemodialysisDataset(path,files,'MLP', save=False)
+    dataset = HemodialysisDataset(path,files,'MLP', save=True)
     return dataset
 
 
