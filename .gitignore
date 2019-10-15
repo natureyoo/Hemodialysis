@@ -13,6 +13,9 @@ data/
 result/
 tensor_data/
 
+### result ###
+result/
+
 ### Linux ###
 *~
 

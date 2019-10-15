@@ -57,6 +57,7 @@ class HemodialysisDataset():
                 else:
                     print(type, end=' ')
                     print(df.shape, end=' ')
+<<<<<<< HEAD
                     df = self.convert_to_sequence(df)
                     print(df.shape, end=' ')
                 if not(os.path.isdir('tensor_data/RNN')):
@@ -73,10 +74,24 @@ class HemodialysisDataset():
                 for c in self.columns:
                     f.write('%s\n' % c)
 
+=======
+>>>>>>> feat: fix error in rnn regression
                     df = self.convert_to_sequence(df)
+                    print(df.shape, end=' ')
                 if not(os.path.isdir('tensor_data/RNN')):
                     os.makedirs(os.path.join('tensor_data/RNN'))
                 torch.save(df, './tensor_data/{}/{}.pt'.format(self.model_type, type))
+
+            with open('./tensor_data/{}/mean_value.json'.format(self.model_type), 'w') as f:
+                f.write(json.dumps(self.mean_for_normalize))
+
+            with open('./tensor_data/{}/std_value.json'.format(self.model_type), 'w') as f:
+                f.write(json.dumps(self.std_for_normalize))
+
+            with open('./tensor_data/{}/columns.csv'.format(self.model_type), 'w') as f:
+                for c in self.columns:
+                    f.write('%s\n' % c)
+
         if not save:
             self.hemodialysis_frame.drop('ID_class', axis=1, inplace=True)
             if self.model_type == 'MLP':
@@ -213,12 +228,14 @@ class HemodialysisDataset():
     def convert_to_sequence(self, df):
         grouped = df.sort_values(['ID_hd', 'HD_ctime'], ascending=[True,True]).groupby('ID_hd')
         unique = df['ID_hd'].unique()
+        self.total_seq = []
         for id_ in unique:
             seq = grouped.get_group(id_)  # dataframe type
             seq.drop('ID_hd', axis=1, inplace=True)
             self.total_seq.append(seq.values.tolist())
 
         self.total_seq = [np.array(i) for i in self.total_seq]
+
         return np.array(self.total_seq)
 
 
@@ -260,10 +277,9 @@ class HemodialysisDataset():
 
 
 def make_data():
-    path ='/home/jayeon/Documents/code/Hemodialysis/data' #raw_data
-    files = ['Hemodialysis1_1007.csv','Hemodialysis2_1007.csv']
-    # files = ['sample.csv']
-    dataset = HemodialysisDataset(path,files,'RNN', save=True)
+    path ='/home/jayeon/Documents/code/Hemodialysis/data' # raw_data
+    files = ['Hemodialysis1_1007.csv','Hemodialysis2_1007.csv'] # ['sample.csv']
+    dataset = HemodialysisDataset(path, files, 'RNN', save=True)
     return dataset
 
 
