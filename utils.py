@@ -126,36 +126,31 @@ def eval_regression(model, loader, device, log_dir, save_result=False, criterion
     return running_loss, total
 
 def eval_rnn(loader, model, device, output_size, criterion=nn.L1Loss(reduction="sum")):
+    with torch.no_grad():
+        running_loss = 0
+        total = 0
 
-    print("********Start Evaluating ********")
-    total = 0
-    running_loss = 0
+        for i, (inputs, targets, seq_len) in enumerate(loader):
+            inputs = inputs.permute(1,0,2).to(device)
+            targets = targets.float().permute(1,0,2).to(device)
+            seq_len = seq_len.to(device)
 
-    for i, (x, y, seq_len) in enumerate(loader):
-        # batch_size = y.size(0)
-        x = x.permute(1,0,2).float().to(device)
-        y = y.float().to(device)
-        seq_len = seq_len.to(device)
-        # print('Shape of x : ', x.shape)
+            outputs = model(inputs, seq_len, device)
 
-        # Forward pass
-        outputs = model(x, seq_len, device)
-        # Initialize
-        flattened_y = y[0,:seq_len[0]].view(-1,output_size)
-        # print("flattened_y", flattened_y.size())
-        flattened_output = outputs[:seq_len[0],0,:].view(-1,output_size)
-        # print("flattened_output", flattened_output.size())
+            flattened_output = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
 
-        for idx,seq in enumerate(seq_len[1:]):
-            # print("Output of single batch:", outputs[idx+1,:seq,:].size())
-            flattened_output = torch.cat([flattened_output,outputs[:seq,idx+1,:].view(-1,output_size)], dim=0)
-            flattened_y = torch.cat((flattened_y,y[idx+1,:seq,:].view(-1,output_size)), dim=0)
+            for idx, seq in enumerate(seq_len):
+                flattened_output = torch.cat([flattened_output, outputs[:seq,idx,:].view(-1,output_size)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq,idx,:].view(-1,output_size)), dim=0)
 
-        loss = criterion(flattened_y, flattened_output)
-        total += len(seq_len)
-        running_loss += loss
-    print("Validation Loss : {:.4f} \n".format(running_loss/total))
-    return running_loss, total
+            loss = criterion(flattened_target, flattened_output)
+            total += len(seq_len)
+            running_loss += loss.item()
+
+        print("Evaluated Loss : {:.4f} \n".format(running_loss/total), end=' ')
+
+    return running_loss/total, total
 
 def rnn_load_data(path, target_idx):
     data = torch.load(path)
