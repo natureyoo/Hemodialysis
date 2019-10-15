@@ -53,4 +53,3 @@ class RNN(nn.Module):
     def init_hidden(self):
         hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)
         return hidden
-

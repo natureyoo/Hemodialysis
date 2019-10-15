@@ -9,6 +9,7 @@ import numpy as np
 import json
 import shutil
 import matplotlib.pyplot as plt
+import json
 
 targets_list = ['VS_sbp_target', 'VS_dbp_target', 'clas_target']
 id_features = ['ID_hd', 'ID_timeline', 'ID_class']
@@ -277,6 +278,22 @@ def confusion_matrix(preds, labels, n_classes):
         print('\n')
 
     return conf_matrix, (sensitivity_log, specificity_log)
+
+
+def un_normalize(outputs, targets, model_type, device):
+    with open('./tensor_data/{}/mean_value.json'.format(model_type)) as f:
+        mean = json.load(f)
+        mean = torch.tensor([mean['VS_sbp'], mean['VS_dbp']]).to(device)
+
+    with open('./tensor_data/{}/std_value.json'.format(model_type)) as f:
+        std = json.load(f)
+        std = torch.tensor([std['VS_sbp'], std['VS_dbp']]).to(device)
+
+    outputs = torch.add(torch.mul(outputs, std), mean)
+    targets = torch.add(torch.mul(targets, std), mean)
+
+    return outputs, targets
+
 
 def rnn_load_data(path, target_idx):
     data = torch.load(path)
