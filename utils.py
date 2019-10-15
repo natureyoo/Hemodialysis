@@ -7,6 +7,7 @@ import torch.nn as nn
 import sklearn.metrics
 import os
 import numpy as np
+import json
 
 targets_list = ['VS_sbp_target', 'VS_dbp_target', 'clas_target']
 id_features = ['ID_hd', 'ID_timeline', 'ID_class']
@@ -125,10 +126,13 @@ def eval_regression(model, loader, device, log_dir, save_result=False, criterion
         f.close()
     return running_loss, total
 
-def eval_rnn(loader, model, device, output_size, criterion=nn.L1Loss(reduction="sum")):
+def eval_rnn_regression(loader, model, device, output_size, criterion):
     with torch.no_grad():
         running_loss = 0
         total = 0
+
+        total_output = torch.tensor([]).to(device)
+        total_target = torch.tensor([]).to(device)
 
         for i, (inputs, targets, seq_len) in enumerate(loader):
             inputs = inputs.permute(1,0,2).to(device)
@@ -144,13 +148,77 @@ def eval_rnn(loader, model, device, output_size, criterion=nn.L1Loss(reduction="
                 flattened_output = torch.cat([flattened_output, outputs[:seq,idx,:].view(-1,output_size)], dim=0)
                 flattened_target = torch.cat((flattened_target, targets[:seq,idx,:].view(-1,output_size)), dim=0)
 
+            total_output = torch.cat([total_output, flattened_output], dim=0)
+            total_target = torch.cat([total_target, flattened_target], dim=0)
+
             loss = criterion(flattened_target, flattened_output)
+
             total += len(seq_len)
             running_loss += loss.item()
 
         print("Evaluated Loss : {:.4f} \n".format(running_loss/total), end=' ')
 
+        total_output, total_target = un_normalize(total_output, total_target, 'RNN', device)
+        total_sub = total_output - total_target
+        print('L1 loss on Raw Sbp: %.2f Dbp: %.2f' % (torch.sum(abs(total_sub[:,0])) / len(total_output), torch.sum(abs(total_sub[:,1])) / len(total_output)))
+
     return running_loss/total, total
+
+def eval_rnn_classification(loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2):
+    with torch.no_grad():
+        running_loss = 0
+        total = 0
+        val_correct1 = 0
+        val_correct2 = 0
+        val_total = 0
+
+        for i, (inputs, targets, seq_len) in enumerate(loader):
+            inputs = inputs.permute(1, 0, 2).to(device)
+            targets = targets.float().permute(1, 0, 2).to(device)
+            seq_len = seq_len.to(device)
+
+            output1, output2 = model(inputs, seq_len, device)
+
+            flattened_output1 = torch.tensor([]).to(device)
+            flattened_output2 = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
+
+            for idx, seq in enumerate(seq_len):
+                flattened_output1 = torch.cat([flattened_output1, output1[:seq, idx, :].reshape(-1, num_class1)], dim=0)
+                flattened_output2 = torch.cat([flattened_output2, output2[:seq, idx, :].reshape(-1, num_class2)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
+
+            loss1 = criterion1(flattened_output1, flattened_target[:, 0].long())
+            loss2 = criterion2(flattened_output2, flattened_target[:, 1].long())
+            loss = loss1 + loss2
+            total += len(seq_len)
+            running_loss += loss.item()
+
+            _, pred1 = torch.max(flattened_output1, 1)
+            _, pred2 = torch.max(flattened_output2, 1)
+            val_correct1 += (pred1 == flattened_target[:, 0].long()).sum().item()
+            val_correct2 += (pred2 == flattened_target[:, 1].long()).sum().item()
+            val_total += len(pred1)
+
+        print("Evaluated Loss : {:.4f}".format(running_loss / total), end=' ')
+        print("Accuracy of Sbp : {:.2f}% Dbp : {:.2f}%".format(100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+
+    return running_loss/total, total
+
+def un_normalize(outputs, targets, model_type, device):
+    with open('./tensor_data/{}/mean_value.json'.format(model_type)) as f:
+        mean = json.load(f)
+        mean = torch.tensor([mean['VS_sbp'], mean['VS_dbp']]).to(device)
+
+    with open('./tensor_data/{}/std_value.json'.format(model_type)) as f:
+        std = json.load(f)
+        std = torch.tensor([std['VS_sbp'], std['VS_dbp']]).to(device)
+
+    outputs = torch.add(torch.mul(outputs, std), mean)
+    targets = torch.add(torch.mul(targets, std), mean)
+
+    return outputs, targets
+
 
 def rnn_load_data(path, target_idx):
     data = torch.load(path)
