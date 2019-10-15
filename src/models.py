@@ -32,7 +32,7 @@ class RNN(nn.Module):
         self.gru = nn.GRU(input_size, hidden_size, num_layer, dropout=dropout_rate)
         self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self,X, seq_len, device):
+    def forward(self, X, seq_len, device):
         h_0 = self.init_hidden().to(device)
         packed = rnn_utils.pack_padded_sequence(X, seq_len, batch_first=False, enforce_sorted=False)
         packed = packed.float().to(device)

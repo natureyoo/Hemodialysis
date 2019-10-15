@@ -4,6 +4,7 @@ import os
 import datetime as dt
 import numpy as np
 import torch
+import json
 
 class HemodialysisDataset():
     """Hemodialysis dataset from SNU"""
@@ -54,10 +55,24 @@ class HemodialysisDataset():
                     df = df.drop('ID_hd', axis=1)
                     df = np.array(df).astype('float')
                 else:
+                    print(type, end=' ')
+                    print(df.shape, end=' ')
                     df = self.convert_to_sequence(df)
+                    print(df.shape, end=' ')
                 if not(os.path.isdir('tensor_data/RNN')):
                     os.makedirs(os.path.join('tensor_data/RNN'))
                 torch.save(df, './tensor_data/{}/{}.pt'.format(self.model_type, type))
+
+            with open('./tensor_data/{}/mean_value.json'.format(self.model_type), 'w') as f:
+                f.write(json.dumps(self.mean_for_normalize))
+
+            with open('./tensor_data/{}/std_value.json'.format(self.model_type), 'w') as f:
+                f.write(json.dumps(self.std_for_normalize))
+
+            with open('./tensor_data/{}/columns.csv'.format(self.model_type), 'w') as f:
+                for c in self.columns:
+                    f.write('%s\n' % c)
+
         if not save:
             self.hemodialysis_frame.drop('ID_class', axis=1, inplace=True)
             if self.model_type == 'MLP':
@@ -139,25 +154,27 @@ class HemodialysisDataset():
             if type == 'sbp':
                 if diff < -20 :
                     return 0
-                if diff < -10 :
+                elif diff < -10 :
                     return 1
-                if diff < -5 :
+                elif diff < -5 :
                     return 2
-                if diff < 5 :
+                elif diff < 5 :
                     return 3
-                if diff < 15:
+                elif diff < 10:
                     return 4
-                else:
+                elif diff < 20:
                     return 5
-
+                else:
+                    return 6
+            
             if type == 'dbp':
                 if diff < -10:
                     return 0
-                if diff < -5:
+                elif diff < -5:
                     return 1
-                if diff < 5:
+                elif diff < 5:
                     return 2
-                if diff < 10:
+                elif diff < 10:
                     return 3
                 else:
                     return 4
@@ -192,24 +209,21 @@ class HemodialysisDataset():
     def convert_to_sequence(self, df):
         grouped = df.sort_values(['ID_hd', 'HD_ctime'], ascending=[True,True]).groupby('ID_hd')
         unique = df['ID_hd'].unique()
+        self.total_seq = []
         for id_ in unique:
             seq = grouped.get_group(id_)  # dataframe type
             seq.drop('ID_hd', axis=1, inplace=True)
             self.total_seq.append(seq.values.tolist())
 
         self.total_seq = [np.array(i) for i in self.total_seq]
+
         return np.array(self.total_seq)
 
 
 def make_data():
-    path ='/home/jayeon/Documents/code/Hemodialysis/data' #raw_data
-    files = ['Hemodialysis1_1007.csv','Hemodialysis2_1007.csv']
-    # files = ['sample.csv']
-<<<<<<< HEAD:src/csv_parser.py
-    dataset = HemodialysisDataset(path,files,'MLP', save=True)
-=======
-    dataset = HemodialysisDataset(path,files,'RNN', save=True)
->>>>>>> feat: make rnn dataset & model:csv_parser.py
+    path ='/home/jayeon/Documents/code/Hemodialysis/data' # raw_data
+    files = ['Hemodialysis1_1007.csv','Hemodialysis2_1007.csv'] # ['sample.csv']
+    dataset = HemodialysisDataset(path, files, 'RNN', save=True)
     return dataset
 
 
