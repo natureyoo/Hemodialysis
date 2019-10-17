@@ -122,7 +122,7 @@ def mlp_regression(args):
                     utils.save_snapshot(model, optimizer, args.save_result_root, (epoch+1), iteration, (epoch+1))
                     best_loss = val_running_loss / val_size
                 print('\n')
-                writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1 +  total_step* epoch))       # Plot outputs and targets
+                writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1 +  total_step* epoch))
 
             if (epoch+1) % args.snapshot_epoch_freq == 0 and i == 0:
                 sample_idx = random.choice(range(batch_size), size=50, replace=False)
@@ -269,10 +269,9 @@ def mlp_cls(args):
                     print("\n    Acc. on Validation: SBP: {:.3f}   DBP:{:.3f}".format(val_sbp_correct/ val_total, val_dbp_correct/ val_total))
                     writer.add_scalars('Acc/Val', {'SBP': val_sbp_correct / val_total,
                                                    'DBP': val_dbp_correct / val_total}, iteration)
-                    # Save best model
                     curr_acc = (val_sbp_correct + val_dbp_correct) / 2  / val_total
                     if best_acc < curr_acc:
-                        print("Saving best model with acc: {}...".format(curr_acc))
+                        print("Saving best model with acc: {:.4f}...".format(curr_acc))
                         utils.save_snapshot(model, optimizer, args.save_result_root, (epoch+1), iteration, (epoch+1))
                         best_acc = curr_acc
 
@@ -298,6 +297,181 @@ def mlp_cls(args):
     # writer.add_scalar('Loss/Test', test_loss / test_size, 1)
     #
 
+def rnn_regression():
+    input_size = 143
+    hidden_size = 128
+    num_layers = 2
+    num_epochs = 1
+    output_size = 2
+    batch_size = 16
+    dropout_rate = 0.2
+    learning_rate = 0.005
+    w_decay = 0.001
+    time = str(datetime.datetime.now())[:16].replace(' ', '_')
+    type = 'Regression'
+
+    log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
+    utils.make_dir(log_dir)
+    # writer = SummaryWriter(log_dir)
+
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = RNN(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, type).to(device)
+
+    train_data = torch.load('./tensor_data/RNN/Train.pt')
+    train_seq_len_list = [len(x) for x in train_data]
+    train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
+    train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
+    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+
+    val_data = torch.load('./tensor_data/RNN/Validation.pt')
+    val_seq_len_list = [len(x) for x in val_data]
+    val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
+    val_data = loader.RNN_Dataset((val_padded, val_seq_len_list), type=type)
+    val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
+
+    criterion = nn.MSELoss(reduction='sum')
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=w_decay)
+    best_loss = 100
+
+    print("Starting training...")
+    total_step = len(train_loader)
+    for epoch in range(num_epochs):
+        running_loss = 0
+        total = 0
+        for i, (inputs, targets, seq_len) in enumerate(train_loader):
+            inputs = inputs.permute(1,0,2).to(device)
+            targets = targets.float().permute(1,0,2).to(device)
+            seq_len = seq_len.to(device)
+
+            outputs = model(inputs, seq_len, device)
+
+            flattened_output = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
+
+            for idx, seq in enumerate(seq_len):
+                flattened_output = torch.cat([flattened_output, outputs[:seq,idx,:].view(-1,output_size)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq,idx,:].view(-1,output_size)), dim=0)
+
+            loss = criterion(flattened_target, flattened_output)
+            total += len(seq_len)
+            running_loss += loss.item()
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if (i + 1) % 1000 == 0:
+                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, i + 1, total_step, running_loss/total), end=' ')
+                # writer.add_scalar('Loss/Train', loss.item(), (i + 1) + total_step * epoch)
+
+                val_running_loss, val_size = utils.eval_rnn_regression(val_loader, model, device, output_size, criterion)
+                if best_loss > val_running_loss:
+                    print("Saving model ...")
+                    best_loss = val_running_loss
+                    state = {'epoch': (epoch + 1), 'iteration': (i+1) + (total_step) * (epoch), 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
+                    torch.save(state, log_dir+'/epoch{}_iter{}_loss{:.4f}.model'.format(epoch+1, (i+1) + (total_step) * (epoch), val_running_loss))
+                # writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1) +  total_step* epoch)
+
+    print("\n\n\n ***Start testing***")
+    test_data = torch.load('tensor_data/RNN/Test.pt')
+    test_seq_len_list = [len(x) for x in test_data]
+    test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
+    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Regression')
+    test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
+    test_loss, test_size = utils.eval_rnn_regression(test_loader, model, device, output_size, criterion)
+    # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
+
+def rnn_classification():
+    input_size = 143
+    hidden_size = 128
+    num_layers = 2
+    num_epochs = 1
+    output_size = 2
+    num_class1 = 7
+    num_class2 = 5
+    batch_size = 16
+    dropout_rate = 0.2
+    learning_rate = 0.001
+    w_decay = 0.001
+    time = str(datetime.datetime.now())[:16].replace(' ', '_')
+    type = 'Classification'
+
+    log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
+    utils.make_dir(log_dir)
+    # writer = SummaryWriter(log_dir)
+
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = RNN(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, type).to(device)
+
+    train_data = torch.load('./tensor_data/RNN/Train.pt')
+    train_seq_len_list = [len(x) for x in train_data]
+    train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
+    train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
+    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+
+    val_data = torch.load('./tensor_data/RNN/Validation.pt')
+    val_seq_len_list = [len(x) for x in val_data]
+    val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
+    val_data = loader.RNN_Dataset((val_padded, val_seq_len_list), type=type)
+    val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
+
+    criterion1 = nn.CrossEntropyLoss()
+    criterion2 = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=w_decay)
+    best_loss = 100
+
+    print("Starting training...")
+    total_step = len(train_loader)
+    for epoch in range(num_epochs):
+        running_loss = 0
+        total = 0
+        for i, (inputs, targets, seq_len) in enumerate(train_loader):
+            inputs = inputs.permute(1,0,2).to(device)
+            targets = targets.float().permute(1,0,2).to(device)
+            seq_len = seq_len.to(device)
+
+            output1, output2 = model(inputs, seq_len, device)
+
+            flattened_output1 = torch.tensor([]).to(device)
+            flattened_output2 = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
+
+            for idx, seq in enumerate(seq_len):
+                flattened_output1 = torch.cat([flattened_output1, output1[:seq, idx, :].reshape(-1, num_class1)], dim=0)
+                flattened_output2 = torch.cat([flattened_output2, output2[:seq, idx, :].reshape(-1, num_class2)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
+
+            loss1 = criterion1(flattened_output1, flattened_target[:, 0].long())
+            loss2 = criterion2(flattened_output2, flattened_target[:, 1].long())
+            loss = loss1 + loss2
+            total += len(seq_len)
+            running_loss += loss.item()
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if (i + 1) % 1000 == 0:
+                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, i + 1, total_step, running_loss/total))
+                # writer.add_scalar('Loss/Train', loss.item(), (i + 1) + total_step * epoch)
+
+                val_running_loss, val_size = utils.eval_rnn_classification(val_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
+                if best_loss > val_running_loss:
+                    print("Saving model ...")
+                    best_loss = val_running_loss
+                    state = {'epoch': (epoch + 1), 'iteration': (i+1) + (total_step) * (epoch), 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
+                    torch.save(state, log_dir+'/epoch{}_iter{}_loss{:.4f}.model'.format(epoch+1, (i+1) + (total_step) * (epoch), val_running_loss))
+                # writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1) +  total_step* epoch)
+
+    print("\n\n\n ***Start testing***")
+    test_data = torch.load('tensor_data/RNN/Test.pt')
+    test_seq_len_list = [len(x) for x in test_data]
+    test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
+    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Regression')
+    test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
+    test_loss, test_size = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion, type)
+    print('test loss : {:.4f}'.format(test_loss))
+    # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
 if __name__ == '__main__':
     args.save_result_root += args.model_type + '_' + args.target_type + '/'

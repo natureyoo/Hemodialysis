@@ -32,7 +32,7 @@ def copy_dir(src, dst, symlinks=False, ignore=None):
 
 def save_snapshot(network, optimizer, snapshot_dir, epoch, iteration, snapshot_epoch_fre):
     if epoch % snapshot_epoch_fre == 0:
-        dir_name = 'snapshot/epoch-%04d' % epoch
+        dir_name = 'snapshot/epoch-%04d/iteration-%05d' % (epoch,iteration)
         save_dir = os.path.join(snapshot_dir, dir_name)
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
