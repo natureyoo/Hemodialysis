@@ -269,6 +269,7 @@ def mlp_cls(args):
                     print("\n    Acc. on Validation: SBP: {:.3f}   DBP:{:.3f}".format(val_sbp_correct/ val_total, val_dbp_correct/ val_total))
                     writer.add_scalars('Acc/Val', {'SBP': val_sbp_correct / val_total,
                                                    'DBP': val_dbp_correct / val_total}, iteration)
+                    # Save best model
                     curr_acc = (val_sbp_correct + val_dbp_correct) / 2  / val_total
                     if best_acc < curr_acc:
                         print("Saving best model with acc: {}...".format(curr_acc))
