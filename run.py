@@ -383,9 +383,9 @@ def rnn_classification():
     test_data = torch.load('tensor_data/RNN/Test.pt')
     test_seq_len_list = [len(x) for x in test_data]
     test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
-    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Regression')
+    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Classification')
     test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
-    test_loss, test_size = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion, type)
+    test_loss, test_size = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
     print('test loss : {:.4f}'.format(test_loss))
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
