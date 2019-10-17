@@ -388,7 +388,7 @@ def rnn_regression(args):
     test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
     test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type=type)
     test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
-    test_sbp_loss, test_dbp_loss, test_size = utils.eval_regression(model, test_loader, device, 'test', output_size, criterion, False, args.save_result_root, criterion)
+    test_sbp_loss, test_dbp_loss, test_size = utils.eval_rnn_regression(model, test_loader, device, 'test', output_size, criterion, False, args.save_result_root, criterion)
     writer.add_scalar('SBP Loss/Test', test_sbp_loss/test_size, 1 )
     writer.add_scalar('DBP Loss/Test', test_dbp_loss/test_size, 1 )
     writer.add_scalar('Raw SBP L1 Loss / Test', test_raw_sbp_loss / test_size, 1)
