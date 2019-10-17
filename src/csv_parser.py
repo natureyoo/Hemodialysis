@@ -166,6 +166,10 @@ class HemodialysisDataset():
                     return 5
                 else:
                     return 6
+<<<<<<< HEAD:csv_parser.py
+=======
+            
+>>>>>>> jayeon_rnn:src/csv_parser.py
             if type == 'dbp':
                 if diff < -10:
                     return 0
