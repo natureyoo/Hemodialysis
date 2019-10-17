@@ -118,7 +118,7 @@ def mlp_regression(args):
                 val_sbp_running_loss, val_dbp_running_loss, val_size = utils.eval_regression(model, val_loader, device, log_dir)
                 val_running_loss = (val_sbp_running_loss + val_dbp_running_loss)
                 if best_loss > val_running_loss/ val_size:
-                    print("Saving best model ...".format(val_running_loss/val_size))
+                    print("Saving best model with loss {:.4f} ...".format(val_running_loss/val_size))
                     utils.save_snapshot(model, optimizer, args.save_result_root, (epoch+1), iteration, (epoch+1))
                     best_loss = val_running_loss / val_size
                 print('\n')
@@ -197,6 +197,7 @@ def mlp_cls(args):
 
     print("Starting training...")
     total_step = len(train_loader)
+    best_acc = 0
     for epoch in range(num_epochs):
         sbp_correct = 0
         dbp_correct = 0
@@ -268,6 +269,11 @@ def mlp_cls(args):
                     print("\n    Acc. on Validation: SBP: {:.3f}   DBP:{:.3f}".format(val_sbp_correct/ val_total, val_dbp_correct/ val_total))
                     writer.add_scalars('Acc/Val', {'SBP': val_sbp_correct / val_total,
                                                    'DBP': val_dbp_correct / val_total}, iteration)
+                    curr_acc = (val_sbp_correct + val_dbp_correct) / 2  / val_total
+                    if best_acc < curr_acc:
+                        print("Saving best model with acc: {}...".format(curr_acc))
+                        utils.save_snapshot(model, optimizer, args.save_result_root, (epoch+1), iteration, (epoch+1))
+                        best_acc = curr_acc
 
                     if (epoch+1) % args.snapshot_epoch_freq ==0 and (i+1) == total_step // args.valid_iter_freq * args.valid_iter_freq :
                         _, sbp_log = utils.confusion_matrix(sbp_pred_tensor, target_tensor[:,0], sbp_num_class)
