@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import time
 import glob
 from models import *
@@ -8,58 +7,82 @@ import sklearn.metrics
 import os
 import numpy as np
 import json
+import shutil
+import matplotlib.pyplot as plt
 
 targets_list = ['VS_sbp_target', 'VS_dbp_target', 'clas_target']
 id_features = ['ID_hd', 'ID_timeline', 'ID_class']
 
-def load_json_data(PATH):
-    """
-    약 3분 소요
-    Inputs:
-        - PATH: relative path to folder containing data (.json)
-    Outputs :
-        - Dataframe with 188 features and 3 targets
-    """
+def copy_file(src_path, dst_dir):
+    if not os.path.isdir(dst_dir):
+        os.makedirs(dst_dir)
+    src_file = src_path.split('/')[-1]
+    dst_path = os.path.join(dst_dir, src_file)
+    shutil.copyfile(src_path, dst_path)
 
-    print("Loading Data...")
-    start_time = time.time()
-    df = None
+def copy_dir(src, dst, symlinks=False, ignore=None):
+    if not os.path.isdir(dst):
+        os.makedirs(dst)
+    for item in os.listdir(src):
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, symlinks, ignore)
+        else:
+            shutil.copy2(s, d)
 
-    for i in glob.glob(PATH+'/*.json'):
-        df = pd.concat([df, pd.read_json(i)])
+def save_snapshot(network, optimizer, snapshot_dir, epoch, iteration, snapshot_epoch_fre):
+    if epoch % snapshot_epoch_fre == 0:
+        dir_name = 'snapshot/epoch-%04d' % epoch
+        save_dir = os.path.join(snapshot_dir, dir_name)
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir)
+        network_path = os.path.join(save_dir, 'model.pth')
+        torch.save(network.state_dict(), network_path)
+        optimizer_path = os.path.join(save_dir, 'optimizer.pth')
+        torch.save(optimizer.state_dict(), optimizer_path)
+        # print('[SAVE] {} {}]' .format(network_path, optimizer_path))
 
-    df.reset_index(drop=True, inplace=True)
+def save_result_txt(outputs, targets, save_root, epoch, Flag='Test', ID=None, initial=None):
+    txt_save_root = os.path.join(save_root + '/result/')
+    if not os.path.isdir(txt_save_root):
+        os.makedirs(txt_save_root)
 
-    print('Time Elapsed to Load Data: ', time.time()- start_time)
+    with open(txt_save_root + 'result_{}epoch_{}.txt'.format(epoch, Flag), 'a') as f:
+        if ID is not None:
+            f.write('ID : {}\n'.format(str(ID.data.cpu().numpy())))
+        f.write('{:25}  {:25}\n'.format('target', 'pred'))
+        if initial is not None:
+            f.write('{:25}  <<-- initial [sbp,dbp]\n'.format(str(initial.int().data.cpu().numpy())))
 
-    return df
+        for output, target in zip(outputs, targets):
+            f.write('{:25}  {:25}'.format(str(target.int().data.cpu().numpy()), str(output.int().data.cpu().numpy())))
+            f.write('\n')
+        f.write('\n')
 
-def save_as_tensor(PATH):
-    """
-    Saves 12 tensors as .pt for train,val,test data and three types of target data
-        - X_Training, X_Validation, X_Test
-        - y_Training_clas_target, [...], [...]
-        - [...], y_Validation_VS_sbp_target, [...]
-        - [...], [...], y_Test_VS_dbp_target
+def save_plot(outputs, targets, save_root, epoch, Flag='Test', title='', ID=None, initial=None, first_batch=False, ax=None):
+    png_save_root = os.path.join(save_root + '/result/')
+    if not os.path.isdir(png_save_root):
+        os.makedirs(png_save_root)
+    plt.close()
 
-    Inputs:
-        - PATH : relative path to folder containing data (.json)
-    """
+    fig, ax = plt.subplots()
 
-    df = load_json_data(PATH)
+    ax.set_title('{} {} {}epoch'.format(Flag, title, epoch))
+    ax.set_xlabel('pred')
+    ax.set_ylabel('target')
 
-    print('Converting to Tensor...')
-    start_time = time.time()
-    for type in ['Training','Test','Validation']:
-        data = df.loc[df.ID_class == type]
+    ax.set_xlim(40, 250)
+    ax.set_ylim(40, 250)
 
-        for t in targets_list: # 3 가지 target_type 저장
-            y = torch.tensor(data[t].values, dtype=torch.float)
-            torch.save(y, 'data/123y_%s_%s.pt' % (type, t))
+    ax.plot([40, 240], [50, 250], 'k-', alpha=0.3)
+    ax.plot([40, 250], [40, 250], 'k-', alpha=0.3)
+    ax.plot([50, 250], [40, 240], 'k-', alpha=0.3)
 
-        X = torch.tensor(data.drop(labels=id_features+targets_list, axis=1).values, dtype=torch.float)
-        torch.save(X, 'data/123X_%s.pt' %(type))
-        print("    Finished converting {} Data , Duration {}".format(type, time.time()-start_time))
+    ax.scatter(outputs.data.cpu().numpy(), targets.data.cpu().numpy(), s=2, alpha=1.0)
+
+    return ax, plt
+
 
 def pad_and_pack(data):
     padded = rnn_utils.pad_sequence([torch.tensor(x) for x in data]) #(seq_len, batch, feature)
@@ -101,30 +124,35 @@ def update_lr(optimizer, lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def eval_regression(model, loader, device, log_dir, save_result=False, criterion=nn.L1Loss(reduction='sum')):
+def eval_regression(model, loader, device, log_dir, save_result=False, criterion=nn.L1Loss(reduction='none')):
     if save_result:
         f = open("{}/test_result.csv".format(log_dir), 'ab')
     with torch.no_grad():
         model.eval()
-        running_loss = 0
+        sbp_running_loss = 0
+        dbp_running_loss = 0
         total = 0
         for (inputs, targets) in loader:
             inputs = inputs.float().to(device)
             targets = targets.to(device)
 
             outputs = model(inputs)
-            targets = targets.float().view(-1, 1)
+            targets = targets.float().view(-1, 2)
             if save_result:
                 concat = torch.stack((outputs, targets), dim=1).squeeze(dim=-1)
                 np.savetxt(f, concat.data.cpu().numpy())
 
-            val_loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets)
+            sbp_loss = loss[:,0]
+            dbp_loss = loss[:,1]
+            sbp_running_loss += sbp_loss.sum().item()
+            dbp_running_loss += dbp_loss.sum().item()
             total += inputs.size(0)
-            running_loss += val_loss.item()
-        print("   L1 loss on Validation: {:.4f}".format(running_loss / total))
+
+        print("   L1 loss on Validation SBP: {:.4f}    DBP: {:.4f}".format(sbp_running_loss/total, sbp_running_loss/total))
     if save_result:
         f.close()
-    return running_loss, total
+    return sbp_running_loss, dbp_running_loss, total
 
 def eval_rnn_regression(loader, model, device, output_size, criterion):
     with torch.no_grad():
@@ -220,6 +248,36 @@ def un_normalize(outputs, targets, model_type, device):
     return outputs, targets
 
 
+def confusion_matrix(preds, labels, n_classes):
+
+    conf_matrix = torch.zeros(n_classes, n_classes)
+    for p, t in zip(preds, labels):
+        conf_matrix[p, t] += 1
+
+    sensitivity_log = {}
+    specificity_log = {}
+    TP = conf_matrix.diag()
+
+    for c in range(n_classes):
+        idx = torch.ones(n_classes).byte()
+        idx[c] = 0
+        TN = conf_matrix[idx.nonzero()[:,None], idx.nonzero()].sum()
+        FP = conf_matrix[c, idx].sum()
+        FN = conf_matrix[idx, c].sum()
+
+        sensitivity = (TP[c] / (TP[c]+FN))
+        specificity = (TN / (TN+FP))
+        sensitivity_log['class_{}'.format(c)] = sensitivity
+        specificity_log['class_{}'.format(c)] = specificity
+
+        print('Class {}\nTP {}, TN {}, FP {}, FN {}'.format(
+            c, TP[c], TN, FP, FN))
+        print('Sensitivity = {:.4f}'.format(sensitivity))
+        print('Specificity = {:.4f}'.format(specificity))
+        print('\n')
+
+    return conf_matrix, (sensitivity_log, specificity_log)
+
 def rnn_load_data(path, target_idx):
     data = torch.load(path)
     seq_len_list = torch.LongTensor([len(x) for x in data])
@@ -247,3 +305,53 @@ def make_dir(path):
         os.makedirs(path)
     except FileExistsError:
         pass
+
+
+def load_json_data(PATH):
+    """
+    약 3분 소요
+    Inputs:
+        - PATH: relative path to folder containing data (.json)
+    Outputs :
+        - Dataframe with 188 features and 3 targets
+    """
+
+    print("Loading Data...")
+    start_time = time.time()
+    df = None
+
+    for i in glob.glob(PATH+'/*.json'):
+        df = pd.concat([df, pd.read_json(i)])
+
+    df.reset_index(drop=True, inplace=True)
+
+    print('Time Elapsed to Load Data: ', time.time()- start_time)
+
+    return df
+
+def save_as_tensor(PATH):
+    """
+    Saves 12 tensors as .pt for train,val,test data and three types of target data
+        - X_Training, X_Validation, X_Test
+        - y_Training_clas_target, [...], [...]
+        - [...], y_Validation_VS_sbp_target, [...]
+        - [...], [...], y_Test_VS_dbp_target
+
+    Inputs:
+        - PATH : relative path to folder containing data (.json)
+    """
+
+    df = load_json_data(PATH)
+
+    print('Converting to Tensor...')
+    start_time = time.time()
+    for type in ['Training','Test','Validation']:
+        data = df.loc[df.ID_class == type]
+
+        for t in targets_list: # 3 가지 target_type 저장
+            y = torch.tensor(data[t].values, dtype=torch.float)
+            torch.save(y, 'data/123y_%s_%s.pt' % (type, t))
+
+        X = torch.tensor(data.drop(labels=id_features+targets_list, axis=1).values, dtype=torch.float)
+        torch.save(X, 'data/123X_%s.pt' %(type))
+        print("    Finished converting {} Data , Duration {}".format(type, time.time()-start_time))

@@ -2,7 +2,11 @@
 <module type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$" />
+<<<<<<< HEAD
     <orderEntry type="jdk" jdkName="Python 3.6 (venv)" jdkType="Python SDK" />
+=======
+    <orderEntry type="jdk" jdkName="Python 3.7 (torch)" jdkType="Python SDK" />
+>>>>>>> logging, sbp&dbp training
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TestRunnerService">
