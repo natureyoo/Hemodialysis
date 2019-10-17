@@ -10,6 +10,7 @@ import json
 import shutil
 import matplotlib.pyplot as plt
 import json
+import random
 
 targets_list = ['VS_sbp_target', 'VS_dbp_target', 'clas_target']
 id_features = ['ID_hd', 'ID_timeline', 'ID_class']
@@ -32,17 +33,17 @@ def copy_dir(src, dst, symlinks=False, ignore=None):
         else:
             shutil.copy2(s, d)
 
-def save_snapshot(network, optimizer, snapshot_dir, epoch, iteration, snapshot_epoch_fre):
+def save_snapshot(model, optimizer, snapshot_dir, epoch, iteration, snapshot_epoch_fre):
     if epoch % snapshot_epoch_fre == 0:
-        dir_name = 'snapshot/epoch-%04d' % epoch
+        dir_name = 'snapshot/epoch-%04d-iter-%04d' % (epoch, iteration)
         save_dir = os.path.join(snapshot_dir, dir_name)
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
-        network_path = os.path.join(save_dir, 'model.pth')
-        torch.save(network.state_dict(), network_path)
+        model_path = os.path.join(save_dir, 'model.pth')
+        torch.save(model.state_dict(), model_path)
         optimizer_path = os.path.join(save_dir, 'optimizer.pth')
         torch.save(optimizer.state_dict(), optimizer_path)
-        # print('[SAVE] {} {}]' .format(network_path, optimizer_path))
+        # print('[SAVE] {} {}]' .format(model_path, optimizer_path))
 
 def save_result_txt(outputs, targets, save_root, epoch, Flag='Test', ID=None, initial=None):
     txt_save_root = os.path.join(save_root + '/result/')
@@ -155,10 +156,13 @@ def eval_regression(model, loader, device, log_dir, save_result=False, criterion
         f.close()
     return sbp_running_loss, dbp_running_loss, total
 
-def eval_rnn_regression(loader, model, device, output_size, criterion):
+def eval_rnn_regression(model, loader, device, data_type, output_size, criterion, is_snapshot_epoch, save_result_root, epoch):
     with torch.no_grad():
-        running_loss = 0
+        sbp_running_loss = 0
+        dbp_running_loss = 0
         total = 0
+        raw_sbp_loss = 0
+        raw_dbp_loss = 0
 
         total_output = torch.tensor([]).to(device)
         total_target = torch.tensor([]).to(device)
@@ -177,21 +181,35 @@ def eval_rnn_regression(loader, model, device, output_size, criterion):
                 flattened_output = torch.cat([flattened_output, outputs[:seq,idx,:].view(-1,output_size)], dim=0)
                 flattened_target = torch.cat((flattened_target, targets[:seq,idx,:].view(-1,output_size)), dim=0)
 
-            total_output = torch.cat([total_output, flattened_output], dim=0)
-            total_target = torch.cat([total_target, flattened_target], dim=0)
+            if is_snapshot_epoch:
+                total_output = torch.cat([total_output, flattened_output], dim=0)
+                total_target = torch.cat([total_target, flattened_target], dim=0)
 
-            loss = criterion(flattened_target, flattened_output)
+            sbp_loss = criterion(flattened_target[:, 0], flattened_output[:, 0])
+            dbp_loss = criterion(flattened_target[:, 1], flattened_output[:, 1])
+
+            sbp_running_loss += sbp_loss.item()
+            dbp_running_loss += dbp_loss.item()
 
             total += len(seq_len)
-            running_loss += loss.item()
 
-        print("Evaluated Loss : {:.4f} \n".format(running_loss/total), end=' ')
+        print("Validation, SBP_Loss: {:.4f} DBP_Loss: {:.4f}".format(sbp_running_loss / total, sbp_running_loss / total))
 
-        total_output, total_target = un_normalize(total_output, total_target, 'RNN', device)
-        total_sub = total_output - total_target
-        print('L1 loss on Raw Sbp: %.2f Dbp: %.2f' % (torch.sum(abs(total_sub[:,0])) / len(total_output), torch.sum(abs(total_sub[:,1])) / len(total_output)))
+        if is_snapshot_epoch:
+            total_sub = total_output - total_target
+            raw_sbp_loss = torch.sum(abs(total_sub[:,0]))
+            raw_dbp_loss = torch.sum(abs(total_sub[:,1]))
 
-    return running_loss/total, total
+            sample_idx = np.random.choice(range(total), size=50, replace=False)
+            sample_output, sample_target = un_normalize(total_output[sample_idx, :], total_target[sample_idx, :], 'RNN', device)
+
+            ax, plt = save_plot(sample_output[:,0], sample_target[:,0], save_result_root, epoch + 1, data_type, 'SBP')
+            plt.savefig(save_result_root + '/result/' + 'sbp_{}epoch_{}_{}loss.png'.format(epoch + 1, data_type, raw_sbp_loss / total), dpi=300)
+            ax, plt = save_plot(sample_output[:,1], sample_target[:,1], save_result_root, epoch + 1, data_type, 'DBP')
+            plt.savefig(save_result_root + '/result/' + 'dbp_{}epoch_{}_{}loss.png'.format(epoch + 1, data_type, raw_dbp_loss / total), dpi=300)
+
+    return sbp_running_loss, dbp_running_loss, total, raw_sbp_loss, raw_dbp_loss
+
 
 def eval_rnn_classification(loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2):
     with torch.no_grad():

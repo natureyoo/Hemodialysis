@@ -15,6 +15,7 @@ tensor_data/
 
 ### result ###
 result/
+result*/*
 
 ### Linux ###
 *~
