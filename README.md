@@ -6,3 +6,7 @@ __10.19 Update__
 * SBP DBP 동시 학습 
 * Logging, snapshot  
 * Classification 은 그래프 그리지 않고 sensitivity 와 specificity class 별로 로깅   
+
+* 코드 리팩토링 및 mlp 코드와 합쳐서 jayeon_rnn 브랜치에 올림
+* RNN Regression Logging, snapshot 완료
+* bash file 생성 완료
