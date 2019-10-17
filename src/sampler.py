@@ -26,16 +26,17 @@ class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
 
         # load mean and stats
         self.stats = {}
-        f = open('tensor_data/RNN_dataset/mean_value.json', encoding='UTF-8')
-        f_ = open('tensor_data/RNN_dataset/mean_value.json', encoding='UTF-8')
-        if target_type == 'sbp':
-            self.stats['mean'] = json.loads(f.read())['VS_sbp']
-            self.stats['std'] = json.loads(f_.read())['VS_sbp']
-        elif target_type == 'dbp':
-            self.stats['mean'] = json.loads(f.read())['VS_dbp']
-            self.stats['std'] = json.loads(f_.read())['VS_dbp']
 
-        f.close(); f_.close()
+        # f = open('data/RNN_dataset/mean_value.json', encoding='UTF-8')
+        # f_ = open('tensor_data/RNN_dataset/mean_value.json', encoding='UTF-8')
+        # if target_type == 'sbp':
+        #     self.stats['mean'] = json.loads(f.read())['VS_sbp']
+        #     self.stats['std'] = json.loads(f_.read())['VS_sbp']
+        # elif target_type == 'dbp':
+        #     self.stats['mean'] = json.loads(f.read())['VS_dbp']
+        #     self.stats['std'] = json.loads(f_.read())['VS_dbp']
+        #
+        # f.close(); f_.close()
 
         # distribution of classes in the dataset
         label_to_count = {}
@@ -52,19 +53,23 @@ class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
         self.weights = torch.DoubleTensor(weights)
 
     def _get_label(self, dataset, target_type, idx):
-        dataset_type = type(dataset)
-        class_ = dataset[idx] * self.stats['std'] + self.stats['mean']
-        if target_type == 'sbp':
-            if class_ < 120:
-                return 'hypo'
-            else:
-                return 'normal'
+        if target_type == 'regression':
+            class_ = dataset[idx] * self.stats['std'] + self.stats['mean']
+            if target_type == 'sbp':
+                if class_ < 120:
+                    return 'hypo'
+                else:
+                    return 'normal'
 
-        if target_type == 'dbp':
-            if class_ < 80:
-                return 'hypo'
-            else:
-                return 'normal'
+            if target_type == 'dbp':
+                if class_ < 80:
+                    return 'hypo'
+                else:
+                    return 'normal'
+
+        else:
+            return dataset[idx][0]
+
     #         if class_ < 112:
     #             return 'hypo'
     #         elif 112 < class_ < 131:
