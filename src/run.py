@@ -300,16 +300,16 @@ def mlp_cls(args):
 
 def rnn_regression(args):
     input_size = 143
-    hidden_size = 128
+    hidden_size = args.hidden_size
     num_layers = 2
-    num_epochs = 1
+    num_epochs = args.max_epoch
     output_size = 2
-    batch_size = 16
+    batch_size = args.batch_size
     dropout_rate = 0.2
-    learning_rate = 0.005
-    w_decay = 0.001
+    learning_rate = args.lr
+    w_decay = args.weight_decay
     time = str(datetime.now())[:16].replace(' ', '_')
-    type = 'Regression'
+    type = args.target_type
 
     log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
@@ -395,20 +395,20 @@ def rnn_regression(args):
     writer.add_scalar('Raw DBP L1 Loss / Test', test_raw_dbp_loss / test_size, 1)
 
 
-def rnn_classification():
+def rnn_classification(args):
     input_size = 143
-    hidden_size = 128
+    hidden_size = args.hidden_size
     num_layers = 2
-    num_epochs = 1
+    num_epochs = args.max_epoch
     output_size = 2
     num_class1 = 7
     num_class2 = 5
-    batch_size = 16
+    batch_size = args.batch_size
     dropout_rate = 0.2
-    learning_rate = 0.001
-    w_decay = 0.001
+    learning_rate = args.lr
+    w_decay = args.weight_decay
     time = str(datetime.datetime.now())[:16].replace(' ', '_')
-    type = 'Classification'
+    type = args.target_type
 
     log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
