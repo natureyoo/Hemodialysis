@@ -9,6 +9,13 @@ tensor_data/
 
 ### result ###
 result/
+data/
+result/
+tensor_data/
+
+### result ###
+result/
+result*/*
 
 ### Linux ###
 *~
@@ -56,7 +63,7 @@ result/
 # When using Gradle or Maven with auto-import, you should exclude module files,
 # since they will be recreated, and may cause churn.  Uncomment if using
 # auto-import.
-# .idea/modules.xml
+.idea/modules.xml
 # .idea/*.iml
 # .idea/modules
 # *.iml
@@ -100,7 +107,7 @@ fabric.properties
 
 # *.iml
 # modules.xml
-# .idea/misc.xml
+.idea/misc.xml
 # *.ipr
 
 # Sonarlint plugin
@@ -188,6 +195,9 @@ target/
 #   having no cross-platform support, pipenv may install dependencies that don't work, or not
 #   install all needed dependencies.
 #Pipfile.lock
+
+# jupyter notebook
+*.ipynb
 
 # celery beat schedule file
 celerybeat-schedule

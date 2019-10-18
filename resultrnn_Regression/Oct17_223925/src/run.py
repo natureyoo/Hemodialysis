@@ -10,31 +10,33 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import numpy.random as random
 import sampler
+import os
 # from csv_parser import HemodialysisDataset
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--save_result_root')
-parser.add_argument('--bash_file')
-parser.add_argument('--only_train')
-parser.add_argument('--target_type')
-parser.add_argument('--model_type')
+def parse_arg():
+    parser = argparse.ArgumentParser(description='Prediction Blood Pressure during Hemodialysis using Deep Learning model')
 
-parser.add_argument('--lr', type=float)
-parser.add_argument('--weight_decay', type=float)
-parser.add_argument('--max_epoch', type=int)
-parser.add_argument('--hidden_size', type=int)
-parser.add_argument('--batch_size', type=int)
-parser.add_argument('--optim', required=False)
-parser.add_argument('--loss', required=False)
-parser.add_argument('--sampler', default=False)
+    parser.add_argument('--save_result_root', type=str)
+    parser.add_argument('--bash_file', type=str)
+    parser.add_argument('--only_train')
+    parser.add_argument('--target_type', type=str, required=True)
+    parser.add_argument('--model_type', type=str, required=True)
 
-parser.add_argument('--snapshot_epoch_freq', default=1, type=int)
-parser.add_argument('--valid_iter_freq', default=500, type=int)
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default 0.001)')
+    parser.add_argument('--weight_decay', type=float, default=0.0001)
+    parser.add_argument('--max_epoch', type=int, default=10)
+    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--optim', required=False)
+    parser.add_argument('--loss', required=False)
+    parser.add_argument('--sampler', default=False)
 
-args = parser.parse_args()
+    parser.add_argument('--snapshot_epoch_freq', default=1, type=int)
+    parser.add_argument('--valid_iter_freq', default=500, type=int)
 
+    args = parser.parse_args()
 
-
+    return args
 
 
 def mlp_regression(args):
@@ -52,8 +54,7 @@ def mlp_regression(args):
     sbp_num_class = 1
     dbp_num_class = 1
     output_size = dbp_num_class + sbp_num_class
-    stats = {'sbp_mean': 132.28392012972589, 'dbp_mean': 72.38757001151521, 'sbp_std': 26.86375195359048,
-                 'dbp_std': 14.179178540137421}
+    stats = {'sbp_mean': 132.28392012972589, 'dbp_mean': 72.38757001151521, 'sbp_std': 26.86375195359048, 'dbp_std': 14.179178540137421}
 
     writer = SummaryWriter(log_dir + 'logs/')
 
@@ -69,12 +70,9 @@ def mlp_regression(args):
     y_val = val_data[:,[sbp_target_idx, dbp_target_idx]]
 
     train_dataset = loader.HD_Dataset((X,y))
+    # imbalanced_sampler = sampler.ImbalancedDatasetSampler(y, target_type)
     val_dataset = loader.HD_Dataset((X_val, y_val))
-    imbalanced_sampler = sampler.ImbalancedDatasetSampler(y, target_type)
-    if imbalanced:
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=imbalanced_sampler)
-    else:
-        train_loader = DataLoader(train_dataset, batch_size=batch_size)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
     criterion = nn.L1Loss(reduction='none')
@@ -125,7 +123,7 @@ def mlp_regression(args):
                     utils.save_snapshot(model, optimizer, args.save_result_root, (epoch+1), iteration, (epoch+1))
                     best_loss = val_running_loss / val_size
                 print('\n')
-                writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1 +  total_step* epoch))
+                writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1 +  total_step* epoch))       # Plot outputs and targets
 
             if (epoch+1) % args.snapshot_epoch_freq == 0 and i == 0:
                 sample_idx = random.choice(range(batch_size), size=50, replace=False)
@@ -137,8 +135,6 @@ def mlp_regression(args):
                 ax, plt = utils.save_plot(sample_dbp[0], sample_dbp[1], args.save_result_root, epoch + 1, 'train', 'DBP') # DBP
                 plt.savefig(args.save_result_root + '/result/' + 'dbp_{}epoch_{}.png'.format(epoch + 1, "train"), dpi=300)
 
-
-
     print("\n\n\n ***Start testing***")
     test_data = torch.load('data/MLP/Test.pt')
     X_test = test_data[:, :-4]
@@ -148,6 +144,7 @@ def mlp_regression(args):
     test_sbp_loss, test_dbp_loss, test_size = utils.eval_regression(model,test_loader, device, log_dir, save_result, criterion)
     writer.add_scalar('SBP Loss/Test', test_sbp_loss/test_size, 1 )
     writer.add_scalar('DBP Loss/Test', test_dbp_loss/test_size, 1 )
+
 
 def mlp_cls(args):
     input_size = 269
@@ -272,9 +269,10 @@ def mlp_cls(args):
                     print("\n    Acc. on Validation: SBP: {:.3f}   DBP:{:.3f}".format(val_sbp_correct/ val_total, val_dbp_correct/ val_total))
                     writer.add_scalars('Acc/Val', {'SBP': val_sbp_correct / val_total,
                                                    'DBP': val_dbp_correct / val_total}, iteration)
+                    # Save best model
                     curr_acc = (val_sbp_correct + val_dbp_correct) / 2  / val_total
                     if best_acc < curr_acc:
-                        print("Saving best model with acc: {:.4f}...".format(curr_acc))
+                        print("Saving best model with acc: {}...".format(curr_acc))
                         utils.save_snapshot(model, optimizer, args.save_result_root, (epoch+1), iteration, (epoch+1))
                         best_acc = curr_acc
 
@@ -298,9 +296,9 @@ def mlp_cls(args):
     # test_loader = DataLoader(test_dataset, batch_size=batch_size)
     # test_loss, test_size = utils.eval_regression(model, test_loader, device, log_dir, save_result, criterion)
     # writer.add_scalar('Loss/Test', test_loss / test_size, 1)
-    #
 
-def rnn_regression():
+
+def rnn_regression(args):
     input_size = 143
     hidden_size = 128
     num_layers = 2
@@ -310,27 +308,28 @@ def rnn_regression():
     dropout_rate = 0.2
     learning_rate = 0.005
     w_decay = 0.001
-    time = str(datetime.datetime.now())[:16].replace(' ', '_')
+    time = str(datetime.now())[:16].replace(' ', '_')
     type = 'Regression'
 
     log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
-    # writer = SummaryWriter(log_dir)
+    writer = SummaryWriter(log_dir + 'logs/')
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = RNN(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, type).to(device)
 
-    train_data = torch.load('./tensor_data/RNN/Train.pt')
+    print(os.getcwd())
+    train_data = torch.load('../tensor_data/RNN/Train.pt')
     train_seq_len_list = [len(x) for x in train_data]
     train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
     train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
-    val_data = torch.load('./tensor_data/RNN/Validation.pt')
+    val_data = torch.load('../tensor_data/RNN/Validation.pt')
     val_seq_len_list = [len(x) for x in val_data]
     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
     val_data = loader.RNN_Dataset((val_padded, val_seq_len_list), type=type)
-    val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=True)
 
     criterion = nn.MSELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=w_decay)
@@ -339,7 +338,8 @@ def rnn_regression():
     print("Starting training...")
     total_step = len(train_loader)
     for epoch in range(num_epochs):
-        running_loss = 0
+        sbp_running_loss = 0
+        dbp_running_loss = 0
         total = 0
         for i, (inputs, targets, seq_len) in enumerate(train_loader):
             inputs = inputs.permute(1,0,2).to(device)
@@ -355,34 +355,46 @@ def rnn_regression():
                 flattened_output = torch.cat([flattened_output, outputs[:seq,idx,:].view(-1,output_size)], dim=0)
                 flattened_target = torch.cat((flattened_target, targets[:seq,idx,:].view(-1,output_size)), dim=0)
 
-            loss = criterion(flattened_target, flattened_output)
+            sbp_loss = criterion(flattened_target[:,0], flattened_output[:,0])
+            dbp_loss = criterion(flattened_target[:,1], flattened_output[:,1])
+            loss = sbp_loss + dbp_loss
+
+            sbp_running_loss += sbp_loss.item()
+            dbp_running_loss += dbp_loss.item()
             total += len(seq_len)
-            running_loss += loss.item()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if (i + 1) % 1000 == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, i + 1, total_step, running_loss/total), end=' ')
-                # writer.add_scalar('Loss/Train', loss.item(), (i + 1) + total_step * epoch)
+            if (i + 1) % args.valid_iter_freq == 0:
+                iteration = (i + 1) + (total_step * epoch)
+                print('Epoch [{}/{}], Step [{}/{}], SBP_Loss: {:.4f} DBP_Loss: {:.4f}'.format(epoch + 1, num_epochs, i + 1, total_step, sbp_running_loss / total, dbp_running_loss/total), end=' ')
+                writer.add_scalar('SBP_Loss/Train', sbp_running_loss / total, (i + 1) + (total_step) * (epoch))
+                writer.add_scalar('DBP_Loss/Train', dbp_running_loss / total, (i + 1) + (total_step) * (epoch))
 
-                val_running_loss, val_size = utils.eval_rnn_regression(val_loader, model, device, output_size, criterion)
-                if best_loss > val_running_loss:
-                    print("Saving model ...")
-                    best_loss = val_running_loss
-                    state = {'epoch': (epoch + 1), 'iteration': (i+1) + (total_step) * (epoch), 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
-                    torch.save(state, log_dir+'/epoch{}_iter{}_loss{:.4f}.model'.format(epoch+1, (i+1) + (total_step) * (epoch), val_running_loss))
-                # writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1) +  total_step* epoch)
+                is_snapshot_epoch = ((epoch + 1) % args.snapshot_epoch_freq == 0) & ((i + 1) == args.valid_iter_freq)
+                val_sbp_running_loss, val_dbp_running_loss, val_size, _, _ = utils.eval_rnn_regression(model, val_loader, device, 'valid', output_size, criterion, is_snapshot_epoch, args.save_result_root, epoch)
+                val_running_loss = val_sbp_running_loss + val_dbp_running_loss
+                if best_loss > val_running_loss / val_size:
+                    print("Saving the best model with loss {:.4f} ...".format(val_running_loss / val_size))
+                    utils.save_snapshot(model, optimizer, args.save_result_root, (epoch + 1), iteration, (epoch + 1))
+                    best_loss = val_running_loss / val_size
+                print('\n')
+                writer.add_scalar('Loss/Val', val_running_loss / val_size, (i + 1) + total_step * epoch)
 
     print("\n\n\n ***Start testing***")
-    test_data = torch.load('tensor_data/RNN/Test.pt')
+    test_data = torch.load('../tensor_data/RNN/Test.pt')
     test_seq_len_list = [len(x) for x in test_data]
     test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
-    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Regression')
+    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type=type)
     test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
-    test_loss, test_size = utils.eval_rnn_regression(test_loader, model, device, output_size, criterion)
-    # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
+    test_sbp_loss, test_dbp_loss, test_size = utils.eval_regression(model, test_loader, device, log_dir, output_size, criterion, False, save_result, criterion)
+    writer.add_scalar('SBP Loss/Test', test_sbp_loss/test_size, 1 )
+    writer.add_scalar('DBP Loss/Test', test_dbp_loss/test_size, 1 )
+    writer.add_scalar('Raw SBP L1 Loss / Test', test_raw_sbp_loss / test_size, 1)
+    writer.add_scalar('Raw DBP L1 Loss / Test', test_raw_dbp_loss / test_size, 1)
+
 
 def rnn_classification():
     input_size = 143
@@ -470,13 +482,15 @@ def rnn_classification():
     test_data = torch.load('tensor_data/RNN/Test.pt')
     test_seq_len_list = [len(x) for x in test_data]
     test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
-    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Regression')
+    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Classification')
     test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
-    test_loss, test_size = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion, type)
+    test_loss, test_size = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
     print('test loss : {:.4f}'.format(test_loss))
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
-if __name__ == '__main__':
+
+def main():
+    args = parse_arg()
     args.save_result_root += args.model_type + '_' + args.target_type + '/'
     dateTimeObj = datetime.now()
     timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
@@ -484,10 +498,18 @@ if __name__ == '__main__':
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
     utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
     utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
-    if args.target_type == 'regression':
-        mlp_regression(args)
-    elif args.target_type == 'cls':
-        mlp_cls(args)
+    if args.model_type == 'mlp':
+        if args.target_type == 'regression':
+            mlp_regression(args)
+        elif args.target_type == 'cls':
+            mlp_cls(args)
+    elif args.model_type == 'rnn':
+        if args.target_type == 'Regression':
+            rnn_regression(args)
+        elif args.target_type == 'Classification':
+            rnn_classification(args)
 
+if __name__ == '__main__':
+    main()
 # run_regression('dbp')
 # rnn('sbp')

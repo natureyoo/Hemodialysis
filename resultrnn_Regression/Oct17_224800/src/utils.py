@@ -6,7 +6,6 @@ import torch.nn as nn
 import sklearn.metrics
 import os
 import numpy as np
-import json
 import shutil
 import matplotlib.pyplot as plt
 import json
@@ -251,21 +250,6 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
         print("Accuracy of Sbp : {:.2f}% Dbp : {:.2f}%".format(100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
 
     return running_loss/total, total
-
-def un_normalize(outputs, targets, model_type, device):
-    with open('./tensor_data/{}/mean_value.json'.format(model_type)) as f:
-        mean = json.load(f)
-        mean = torch.tensor([mean['VS_sbp'], mean['VS_dbp']]).to(device)
-
-    with open('./tensor_data/{}/std_value.json'.format(model_type)) as f:
-        std = json.load(f)
-        std = torch.tensor([std['VS_sbp'], std['VS_dbp']]).to(device)
-
-    outputs = torch.add(torch.mul(outputs, std), mean)
-    targets = torch.add(torch.mul(targets, std), mean)
-
-    return outputs, targets
-
 
 def confusion_matrix(preds, labels, n_classes):
 
