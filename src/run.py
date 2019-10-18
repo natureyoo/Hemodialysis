@@ -476,7 +476,8 @@ def rnn_classification():
     print('test loss : {:.4f}'.format(test_loss))
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
-if __name__ == '__main__':
+def main():
+    args = parse_arg()
     args.save_result_root += args.model_type + '_' + args.target_type + '/'
     dateTimeObj = datetime.now()
     timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
@@ -484,10 +485,21 @@ if __name__ == '__main__':
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
     utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
     utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
-    if args.target_type == 'regression':
-        mlp_regression(args)
-    elif args.target_type == 'cls':
-        mlp_cls(args)
+    if args.model_type == 'mlp':
+        if args.target_type == 'regression':
+            mlp_regression(args)
+        elif args.target_type == 'cls':
+            mlp_cls(args)
+    elif args.model_type == 'rnn':
+        if args.target_type == 'Regression':
+            rnn_regression(args)
+        elif args.target_type == 'Classification':
+            rnn_classification(args)
+
+if __name__ == '__main__':
+    main()
+# run_regression('dbp')
+# rnn('sbp')
 
 # run_regression('dbp')
 # rnn('sbp')
