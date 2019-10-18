@@ -26,10 +26,11 @@ parser.add_argument('--hidden_size', type=int)
 parser.add_argument('--batch_size', type=int)
 parser.add_argument('--optim', required=False)
 parser.add_argument('--loss', required=False)
-parser.add_argument('--sampler', default=False)
+parser.add_argument('--sampler', default=0, type=int)
 
 parser.add_argument('--snapshot_epoch_freq', default=1, type=int)
 parser.add_argument('--valid_iter_freq', default=500, type=int)
+parser.add_argument('--description', default='')
 
 args = parser.parse_args()
 
@@ -149,7 +150,7 @@ def mlp_regression(args):
     writer.add_scalar('SBP Loss/Test', test_sbp_loss/test_size, 1 )
     writer.add_scalar('DBP Loss/Test', test_dbp_loss/test_size, 1 )
 
-def mlp_cls(args):
+def mlp_classifications(args):
     input_size = 269
     hidden_size = args.hidden_size
     num_epochs = args.max_epoch
@@ -480,16 +481,16 @@ def main():
     args = parse_arg()
     args.save_result_root += args.model_type + '_' + args.target_type + '/'
     dateTimeObj = datetime.now()
-    timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
+    timestampStr = dateTimeObj.strftime("%b%d_%H%M%S_{}/".format(args.description))
     args.save_result_root += timestampStr
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
     utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
     utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
     if args.model_type == 'mlp':
-        if args.target_type == 'regression':
+        if args.target_type == 'Regression':
             mlp_regression(args)
-        elif args.target_type == 'cls':
-            mlp_cls(args)
+        elif args.target_type == 'Classification':
+            mlp_classification(args)
     elif args.model_type == 'rnn':
         if args.target_type == 'Regression':
             rnn_regression(args)
