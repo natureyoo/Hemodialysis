@@ -68,7 +68,7 @@ class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
                     return 'normal'
 
         else:
-            return dataset[idx][0]
+            return dataset[idx][1]
 
     #         if class_ < 112:
     #             return 'hypo'

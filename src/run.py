@@ -26,10 +26,11 @@ parser.add_argument('--hidden_size', type=int)
 parser.add_argument('--batch_size', type=int)
 parser.add_argument('--optim', required=False)
 parser.add_argument('--loss', required=False)
-parser.add_argument('--sampler', default=False)
+parser.add_argument('--sampler', default=0, type=int)
 
 parser.add_argument('--snapshot_epoch_freq', default=1, type=int)
 parser.add_argument('--valid_iter_freq', default=500, type=int)
+parser.add_argument('--description', default='')
 
 args = parser.parse_args()
 
@@ -68,10 +69,14 @@ def mlp_regression(args):
     X_val = val_data[:,:-4]
     y_val = val_data[:,[sbp_target_idx, dbp_target_idx]]
 
+
     train_dataset = loader.HD_Dataset((X,y))
-    # imbalanced_sampler = sampler.ImbalancedDatasetSampler(y, target_type)
+    imbalanced_sampler = sampler.ImbalancedDatasetSampler(y, target_type)
+    if imbalanced:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=imbalanced_sampler)
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size)
     val_dataset = loader.HD_Dataset((X_val, y_val))
-    train_loader = DataLoader(train_dataset, batch_size=batch_size)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
     criterion = nn.L1Loss(reduction='none')
@@ -155,6 +160,7 @@ def mlp_cls(args):
     w_decay = args.weight_decay
     log_dir = args.save_result_root
     imbalanced = args.sampler
+    print("Imbalanced:", imbalanced)
     target_type = args.target_type
 
     save_result = True
@@ -477,7 +483,7 @@ def rnn_classification():
 if __name__ == '__main__':
     args.save_result_root += args.model_type + '_' + args.target_type + '/'
     dateTimeObj = datetime.now()
-    timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
+    timestampStr = dateTimeObj.strftime("%b%d_%H%M%S_{}/".format(args.description))
     args.save_result_root += timestampStr
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
     utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙

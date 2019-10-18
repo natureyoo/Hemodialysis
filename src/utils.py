@@ -6,12 +6,10 @@ import torch.nn as nn
 import sklearn.metrics
 import os
 import numpy as np
-<<<<<<< HEAD:src/utils.py
 import shutil
 import matplotlib.pyplot as plt
-=======
 import json
->>>>>>> 2b6212f7e8d553b877c1cdc9783a565481e471d9:utils.py
+
 
 targets_list = ['VS_sbp_target', 'VS_dbp_target', 'clas_target']
 id_features = ['ID_hd', 'ID_timeline', 'ID_class']
