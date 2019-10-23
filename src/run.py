@@ -174,11 +174,11 @@ def mlp_classification(args):
 
     # device = torch.device('cpu')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = MLP(input_size, hidden_size, output_size).to(device)
+    model = MLP_large(input_size, hidden_size, output_size).to(device)
 
     train_data = torch.load('data/MLP/Train.pt')
     X = train_data[:, :-4]
-    y = train_data[:, [sbp_target_idx, dbp_target_idx]] #Shape : (batch,2) 
+    y = train_data[:, [sbp_target_idx, dbp_target_idx]] #Shape : (batch,2)
 
     val_data = torch.load('data/MLP/Validation.pt')
     X_val = val_data[:, :-4]
@@ -197,12 +197,14 @@ def mlp_classification(args):
 
     sbp_criterion = nn.CrossEntropyLoss()
     dbp_criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay)
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100,200,500,1000], gamma=0.1)
 
     print("Starting training...")
     total_step = len(train_loader)
     best_acc = 0
     for epoch in range(num_epochs):
+        scheduler.step()
         sbp_correct = 0
         dbp_correct = 0
         total = 0
@@ -230,8 +232,7 @@ def mlp_classification(args):
 
             # Backward and optimize
             optimizer.zero_grad()
-            # total_loss.backward()
-            sbp_loss.backward()
+            total_loss.backward()
             optimizer.step()
 
             if (i + 1) % args.valid_iter_freq == 0:

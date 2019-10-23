@@ -18,6 +18,22 @@ class MLP(nn.Module):
         out = self.fc2(out)
         return out
 
+class MLP_large(nn.Module):
+    def __init__(self, input_size, hidden_size, num_classes):
+        super().__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.relu = nn.ReLU()
+        self.bn1 = nn.BatchNorm1d(hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.bn2 = nn.BatchNorm1d(hidden_size)
+        self.fc3 = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        out = self.bn1(self.relu(self.fc1(x)))
+        out = self.bn2(self.relu(self.fc2(out)))
+        out = self.fc3(out)
+        return out
+
 class RNN(nn.Module):
     def __init__(self, input_size, hidden_size, num_layer, output_size, batch_size, dropout_rate, type='Regression'):
         super().__init__()
