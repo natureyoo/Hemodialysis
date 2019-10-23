@@ -69,14 +69,13 @@ def mlp_regression(args):
     X_val = val_data[:,:-4]
     y_val = val_data[:,[sbp_target_idx, dbp_target_idx]]
 
-
     train_dataset = loader.HD_Dataset((X,y))
+    val_dataset = loader.HD_Dataset((X_val, y_val))
     imbalanced_sampler = sampler.ImbalancedDatasetSampler(y, target_type)
     if imbalanced:
         train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=imbalanced_sampler)
     else:
         train_loader = DataLoader(train_dataset, batch_size=batch_size)
-    val_dataset = loader.HD_Dataset((X_val, y_val))
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
     criterion = nn.L1Loss(reduction='none')
@@ -151,8 +150,8 @@ def mlp_regression(args):
     writer.add_scalar('SBP Loss/Test', test_sbp_loss/test_size, 1 )
     writer.add_scalar('DBP Loss/Test', test_dbp_loss/test_size, 1 )
 
-def mlp_cls(args):
-    input_size = 269
+def mlp_classification(args):
+    input_size = 271
     hidden_size = args.hidden_size
     num_epochs = args.max_epoch
     batch_size = args.batch_size
@@ -160,13 +159,12 @@ def mlp_cls(args):
     w_decay = args.weight_decay
     log_dir = args.save_result_root
     imbalanced = args.sampler
-    print("Imbalanced:", imbalanced)
     target_type = args.target_type
 
     save_result = True
     sbp_target_idx = -2
     dbp_target_idx = -1
-    sbp_num_class = 6
+    sbp_num_class = 7
     dbp_num_class = 5
     output_size = dbp_num_class + sbp_num_class
     stats = {'sbp_mean': 132.28392012972589, 'dbp_mean': 72.38757001151521, 'sbp_std': 26.86375195359048,
@@ -180,7 +178,7 @@ def mlp_cls(args):
 
     train_data = torch.load('data/MLP/Train.pt')
     X = train_data[:, :-4]
-    y = train_data[:, [sbp_target_idx, dbp_target_idx]] #Shape : (batch,2) --> (batch,1,1)
+    y = train_data[:, [sbp_target_idx, dbp_target_idx]] #Shape : (batch,2) 
 
     val_data = torch.load('data/MLP/Validation.pt')
     X_val = val_data[:, :-4]
@@ -232,7 +230,8 @@ def mlp_cls(args):
 
             # Backward and optimize
             optimizer.zero_grad()
-            total_loss.backward()
+            # total_loss.backward()
+            sbp_loss.backward()
             optimizer.step()
 
             if (i + 1) % args.valid_iter_freq == 0:
@@ -479,8 +478,7 @@ def rnn_classification():
     print('test loss : {:.4f}'.format(test_loss))
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
-
-if __name__ == '__main__':
+def main():
     args.save_result_root += args.model_type + '_' + args.target_type + '/'
     dateTimeObj = datetime.now()
     timestampStr = dateTimeObj.strftime("%b%d_%H%M%S_{}/".format(args.description))
@@ -488,11 +486,21 @@ if __name__ == '__main__':
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
     utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
     utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
-    if args.target_type == 'regression':
-        mlp_regression(args)
-    elif args.target_type == 'cls':
-        mlp_cls(args)
+    if args.model_type == 'mlp':
+        if args.target_type == 'Regression':
+            mlp_regression(args)
+        elif args.target_type == 'Classification':
+            mlp_classification(args)
+    elif args.model_type == 'rnn':
+        if args.target_type == 'Regression':
+            rnn_regression(args)
+        elif args.target_type == 'Classification':
+            rnn_classification(args)
 
+if __name__ == '__main__':
+    main()
 # run_regression('dbp')
 # rnn('sbp')
 
+# run_regression('dbp')
+# rnn('sbp')
