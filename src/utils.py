@@ -219,6 +219,10 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
         val_correct2 = 0
         val_total = 0
 
+        total_output1 = torch.tensor([], dtype=torch.long).to(device)
+        total_output2 = torch.tensor([], dtype=torch.long).to(device)
+        total_target = torch.tensor([]).to(device)
+
         for i, (inputs, targets, seq_len) in enumerate(loader):
             inputs = inputs.permute(1, 0, 2).to(device)
             targets = targets.float().permute(1, 0, 2).to(device)
@@ -247,10 +251,15 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
             val_correct2 += (pred2 == flattened_target[:, 1].long()).sum().item()
             val_total += len(pred1)
 
+            total_output1 = torch.cat([total_output1, pred1], dim=0)
+            total_output2 = torch.cat([total_output2, pred2], dim=0)
+            total_target = torch.cat([total_target, flattened_target], dim=0)
+
+
         print("Evaluated Loss : {:.4f}".format(running_loss / total), end=' ')
         print("Accuracy of Sbp : {:.2f}% Dbp : {:.2f}%".format(100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
 
-    return running_loss/total, total
+    return running_loss/total, total, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
 
 def un_normalize(outputs, targets, model_type, device):
     with open('./tensor_data/{}/mean_value.json'.format(model_type)) as f:
@@ -271,7 +280,7 @@ def confusion_matrix(preds, labels, n_classes):
 
     conf_matrix = torch.zeros(n_classes, n_classes)
     for p, t in zip(preds, labels):
-        conf_matrix[p, t] += 1
+        conf_matrix[int(p.item()), int(t.item())] += 1
 
     sensitivity_log = {}
     specificity_log = {}
@@ -289,13 +298,46 @@ def confusion_matrix(preds, labels, n_classes):
         sensitivity_log['class_{}'.format(c)] = sensitivity
         specificity_log['class_{}'.format(c)] = specificity
 
-        print('Class {}\nTP {}, TN {}, FP {}, FN {}'.format(
-            c, TP[c], TN, FP, FN))
-        print('Sensitivity = {:.4f}'.format(sensitivity))
-        print('Specificity = {:.4f}'.format(specificity))
-        print('\n')
+        #print('Class {}\nTP {}, TN {}, FP {}, FN {}'.format(c, TP[c], TN, FP, FN))
+        #print('Sensitivity = {:.4f}'.format(sensitivity))
+        #print('Specificity = {:.4f}'.format(specificity))
+        #print('\n')
 
     return conf_matrix, (sensitivity_log, specificity_log)
+
+
+def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_type='train', name=None):
+    import seaborn as sn
+    import matplotlib
+    matplotlib.use('Agg')
+    from matplotlib import pyplot as plt
+
+    save_dir = save_dir + '/confusion_matrix'
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+
+    if name == 'sbp':
+        num_class = 7
+    else :
+        num_class = 5
+    matrix = np.transpose(matrix)
+    matrix_sum = matrix.sum(axis=1)
+    for i in range(len(matrix)):
+        matrix[i] /= matrix_sum[i]
+
+    df_cm = pd.DataFrame(matrix, index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
+    plt.figure(figsize = (7,5))
+    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=1)
+    ax.set_title('{}_{}epoch_{}iter'.format(name, epoch, iteration))
+    ax.yaxis.set_ticklabels(ax.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=10)
+    ax.xaxis.set_ticklabels(ax.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=10)
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom + 0.5, top - 0.5)
+    plt.ylabel('true label')
+    plt.xlabel('pred label')
+
+    ax.figure.savefig('{}/{}_{}_{}epoch_{}iter.jpg'.format(save_dir, data_type, name, epoch, iteration))
+    plt.close("all")
 
 
 def un_normalize(outputs, targets, model_type, device):

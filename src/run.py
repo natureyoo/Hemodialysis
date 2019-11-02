@@ -2,6 +2,7 @@ import torch
 from models import *
 from torch.utils.data import DataLoader
 import torch.nn as nn
+import torch.nn.utils.rnn as rnn_utils
 import numpy as np
 import loader
 import utils
@@ -314,7 +315,7 @@ def rnn_regression():
     time = str(datetime.datetime.now())[:16].replace(' ', '_')
     type = 'Regression'
 
-    log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
+    log_dir = '{}/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(args.save_result_root, time, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
     # writer = SummaryWriter(log_dir)
 
@@ -387,27 +388,43 @@ def rnn_regression():
 
 def rnn_classification():
     input_size = 143
-    hidden_size = 128
-    num_layers = 2
-    num_epochs = 1
+    hidden_size = args.hidden_size
+    num_layers = 5
+    num_epochs = args.max_epoch
     output_size = 2
     num_class1 = 7
     num_class2 = 5
     batch_size = 16
     dropout_rate = 0.2
-    learning_rate = 0.001
-    w_decay = 0.001
-    time = str(datetime.datetime.now())[:16].replace(' ', '_')
-    type = 'Classification'
+    learning_rate = args.lr
+    w_decay = args.weight_decay
+    time = str(datetime.now())[:16].replace(' ', '_')
+    type = args.target_type
 
-    log_dir = 'result/rnn/{}/{}_bs{}_lr{}_wdecay{}'.format(type, time, batch_size, learning_rate, w_decay)
+    log_dir = '{}/bs{}_lr{}_wdecay{}'.format(args.save_result_root, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
-    # writer = SummaryWriter(log_dir)
+    writer = SummaryWriter(log_dir)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = RNN(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, type).to(device)
 
+    # state = torch.load('/home/jayeon/Documents/code/Hemodialysis/result/rnn/Classification/Oct24_202805/bs16_lr0.0001_wdecay0.001/epoch13_iter147448_loss0.1959.model')
+    # model.load_state_dict(state['model'])
+
     train_data = torch.load('./tensor_data/RNN/Train.pt')
+    weight1 = [0 for i in range(num_class1)]
+    weight2 = [0 for i in range(num_class2)]
+
+    for i in range(len(train_data)):
+        for j in range(len(train_data[i])):
+            weight1[train_data[i][j][-2].astype(int)] += 1
+            weight2[train_data[i][j][-1].astype(int)] += 1
+
+    weight1 = torch.from_numpy(1 / (weight1 / np.sum(weight1))).float()
+    weight1 = weight1.to(device)
+    weight2 = torch.from_numpy(1 / (weight2 / np.sum(weight2))).float()
+    weight2 = weight2.to(device)
+
     train_seq_len_list = [len(x) for x in train_data]
     train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
     train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
@@ -419,9 +436,12 @@ def rnn_classification():
     val_data = loader.RNN_Dataset((val_padded, val_seq_len_list), type=type)
     val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
 
+    # criterion1 = nn.CrossEntropyLoss(weight=weight1)
+    # criterion2 = nn.CrossEntropyLoss(weight=weight2)
     criterion1 = nn.CrossEntropyLoss()
     criterion2 = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=w_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
     best_loss = 100
 
     print("Starting training...")
@@ -455,17 +475,34 @@ def rnn_classification():
             loss.backward()
             optimizer.step()
 
-            if (i + 1) % 1000 == 0:
+            if (i + 1) % 3000 == 0:
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, i + 1, total_step, running_loss/total))
                 # writer.add_scalar('Loss/Train', loss.item(), (i + 1) + total_step * epoch)
+                _, pred1 = torch.max(flattened_output1, 1)
+                _, pred2 = torch.max(flattened_output2, 1)
+                sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred1, flattened_target[:, 0], num_class1)
+                dbp_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 1], num_class2)
+                utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch + 1, i + 1, 'train', 'sbp')
+                utils.confusion_matrix_save_as_img(dbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch + 1, i + 1, 'train', 'dbp')
 
-                val_running_loss, val_size = utils.eval_rnn_classification(val_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
+                val_running_loss, val_size, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification(val_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
                 if best_loss > val_running_loss:
                     print("Saving model ...")
                     best_loss = val_running_loss
                     state = {'epoch': (epoch + 1), 'iteration': (i+1) + (total_step) * (epoch), 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
                     torch.save(state, log_dir+'/epoch{}_iter{}_loss{:.4f}.model'.format(epoch+1, (i+1) + (total_step) * (epoch), val_running_loss))
-                # writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1) +  total_step* epoch)
+
+                    sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred1, flattened_target[:, 0], num_class1)
+                    dbp_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 1], num_class2)
+                    utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch + 1, i + 1, 'val', 'sbp')
+                    utils.confusion_matrix_save_as_img(dbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch + 1, i + 1, 'val', 'dbp')
+                    
+                writer.add_scalar('Loss/Val', val_running_loss/val_size, (i+1) +  total_step* epoch)
+                writer.add_scalar('SBP_Accuracy/Val', sbp_accuracy, (i + 1) + total_step * epoch)
+                writer.add_scalar('DBP_Accuracy/Val', dbp_accuracy, (i + 1) + total_step * epoch)
+
+        scheduler.step(running_loss/total)
+
 
     print("\n\n\n ***Start testing***")
     test_data = torch.load('tensor_data/RNN/Test.pt')
@@ -473,16 +510,16 @@ def rnn_classification():
     test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
     test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Regression')
     test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
-    test_loss, test_size = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion, type)
+    test_loss, test_size, _, _, _, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
     print('test loss : {:.4f}'.format(test_loss))
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
 def main():
     args = parse_arg()
-    args.save_result_root += args.model_type + '_' + args.target_type + '/'
+    args.save_result_root += '/' + args.model_type + '/' + args.target_type
     dateTimeObj = datetime.now()
-    timestampStr = dateTimeObj.strftime("%b%d_%H%M%S_{}/".format(args.description))
-    args.save_result_root += timestampStr
+    timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
+    args.save_result_root += '/' + timestampStr
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
     utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
     utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
