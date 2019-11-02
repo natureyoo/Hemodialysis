@@ -278,7 +278,7 @@ def confusion_matrix(preds, labels, n_classes):
     TP = conf_matrix.diag()
 
     for c in range(n_classes):
-        idx = torch.ones(n_classes).byte()
+        idx = torch.ones(n_classes).bool()
         idx[c] = 0
         TN = conf_matrix[idx.nonzero()[:,None], idx.nonzero()].sum()
         FP = conf_matrix[c, idx].sum()
@@ -289,28 +289,50 @@ def confusion_matrix(preds, labels, n_classes):
         sensitivity_log['class_{}'.format(c)] = sensitivity
         specificity_log['class_{}'.format(c)] = specificity
 
-        print('Class {}\nTP {}, TN {}, FP {}, FN {}'.format(
-            c, TP[c], TN, FP, FN))
-        print('Sensitivity = {:.4f}'.format(sensitivity))
-        print('Specificity = {:.4f}'.format(specificity))
-        print('\n')
+        # print('Class {}\nTP {}, TN {}, FP {}, FN {}'.format(
+        #     c, TP[c], TN, FP, FN))
+        # print('Sensitivity = {:.4f}'.format(sensitivity))
+        # print('Specificity = {:.4f}'.format(specificity))
+        # print('\n')
 
     return conf_matrix, (sensitivity_log, specificity_log)
 
+def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, name=None):
+    import seaborn as sn
+    import matplotlib
+    matplotlib.use('Agg')
+    from matplotlib import pyplot as plt
 
-def un_normalize(outputs, targets, model_type, device):
-    with open('./tensor_data/{}/mean_value.json'.format(model_type)) as f:
-        mean = json.load(f)
-        mean = torch.tensor([mean['VS_sbp'], mean['VS_dbp']]).to(device)
 
-    with open('./tensor_data/{}/std_value.json'.format(model_type)) as f:
-        std = json.load(f)
-        std = torch.tensor([std['VS_sbp'], std['VS_dbp']]).to(device)
+    save_dir = save_dir+'confusion_matrix/'
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
 
-    outputs = torch.add(torch.mul(outputs, std), mean)
-    targets = torch.add(torch.mul(targets, std), mean)
+    if name == 'sbp':
+        num_class = 7
+    else :
+        num_class = 5
+    matrix = np.transpose(matrix)
+    matrix_sum = matrix.sum(axis=1)
+    for i in range(len(matrix)):
+        matrix[i] /= matrix_sum[i]
 
-    return outputs, targets
+    df_cm = pd.DataFrame(matrix, index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
+    plt.figure(figsize = (7,5))
+    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=1)
+    ax.set_title('{}_{}epoch'.format(name, epoch))
+    ax.yaxis.set_ticklabels(ax.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=10)
+    ax.xaxis.set_ticklabels(ax.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=10)
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom + 0.5, top - 0.5)
+    plt.ylabel('true label')
+    plt.xlabel('pred label')
+
+    ax.figure.savefig('{}/{}_{}epoch.jpg'.format(save_dir, name, epoch))
+    plt.close("all")
+
+
+
 
 
 def rnn_load_data(path, target_idx):
@@ -390,3 +412,60 @@ def save_as_tensor(PATH):
         X = torch.tensor(data.drop(labels=id_features+targets_list, axis=1).values, dtype=torch.float)
         torch.save(X, 'data/123X_%s.pt' %(type))
         print("    Finished converting {} Data , Duration {}".format(type, time.time()-start_time))
+
+def find_idx_that_the_number_of_label_is_same_with_min_num(labels, uniques, counts):
+    temp = list()
+    min = np.amin(counts)   # 2051
+    min_idx = np.argmin(counts)
+    for unique in uniques:
+        sbp, dbp = unique
+        cnt = 0
+        for i in range(len(labels)):
+            if labels[i,0] == sbp and labels[i,1] == dbp:
+                cnt += 1
+            if cnt == min :
+                temp.append(i)
+                print(unique, i)
+
+                break
+    print(temp)
+    return temp 
+
+def data_preproc(data, label):
+    uniques, counts = np.unique(label, axis=0, return_counts=True)
+
+    # idxs = find_idx_that_the_number_of_label_is_same_with_min_num(label, uniques, counts)
+    idxs = [37917, 81139, 77997, 745146, 902692, \
+        84212, 65156, 33607, 311857, 470365, \
+            208057, 97855, 29595, 266478, 427933, \
+                168896, 73089, 8887, 75705, 122490, \
+                    621624, 285693, 34423, 105323, 190991, \
+                        554787, 281717, 32115, 61398, 74532, \
+                            1121246, 673970, 80410, 95600, 46106]
+    data_after_ = np.array([])
+    label_after_ = np.array([])
+    for i, unique in enumerate(uniques):
+        find_label_idx_sbp = (label[:,0] == unique[0])
+        find_label_idx_dbp = (label[:,1] == unique[1])
+        find_label_idx = np.logical_and(find_label_idx_sbp, find_label_idx_dbp)
+        find_label_idx[idxs[i]+1:] = False
+
+        temp_data = data[find_label_idx]
+        temp_label = label[find_label_idx]
+
+        data_after_ = np.vstack([data_after_, temp_data]) if data_after_.size else temp_data
+        label_after_ = np.vstack([label_after_, temp_label]) if label_after_.size else temp_label
+
+
+
+    return data_after_, label_after_
+
+
+def sbp_dbp_target_converter(labels, from_each_to_merge=True):
+    if from_each_to_merge:
+        new_label = (labels[:,0] * 5) + labels[:,1]
+    else :
+        sbp_s = (labels / 5).view(-1,1)
+        dbp_s = (labels % 5).view(-1,1)
+        new_label = torch.cat((sbp_s, dbp_s), 1)
+    return new_label
