@@ -6,3 +6,9 @@ __10.19 Update__
 * SBP DBP 동시 학습 
 * Logging, snapshot  
 * Classification 은 그래프 그리지 않고 sensitivity 와 specificity class 별로 로깅   
+
+
+__11.02 Updata__
+* 35-class 학습하는 code 작성. (option으로 주지 않고 주석 처리해서 써야됨. 아직 training 원인을 알지 못해 code수정 계획X)
+* confusion matrix
+* MLP model : deep하게 & batchnorm추가
