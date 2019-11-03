@@ -83,19 +83,68 @@ class RNN(nn.Module):
         self.dropout_rate = dropout_rate
         self.type = type
 
+        self.fc_before_rnn = nn.Linear(input_size, input_size)
+        self.input_BN = nn.BatchNorm1d(input_size)
+
         # CRU , FC
         self.gru = nn.GRU(input_size, hidden_size, num_layer, dropout=dropout_rate)
+        self.gru_first = nn.GRU(input_size, hidden_size, num_layer)
         if self.type == 'Regression':
             self.fc = nn.Linear(hidden_size, output_size)
         else:
-            self.fc_class1 = nn.Linear(hidden_size, 7)
-            self.fc_class2 = nn.Linear(hidden_size, 5)
+            self.fc_class1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.RReLU(), nn.Linear(hidden_size, 7))
+            self.fc_class2 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.RReLU(), nn.Linear(hidden_size, 5))
+            # self.fc_class2 = nn.Linear(hidden_size, 5)
+        
+        for m in [self.fc_class1] :
+            # for m in self.fc:
+                if isinstance(m, nn.BatchNorm2d):
+                    if m.weight is not None:
+                        m.weight.data.normal_(0.0, 0.02)
+                    if m.bias is not None:
+                        m.bias.data.zero_()
+                if isinstance(m, nn.BatchNorm1d):
+                    if m.weight is not None:
+                        m.weight.data.normal_(0.0, 0.02)
+                    if m.bias is not None:
+                        m.bias.data.zero_()
+                elif isinstance(m, nn.Linear):
+                    # m.weight.data.normal_(0.0, 100.0)
+                    # get the number of the inputs
+                    # n = m.in_features
+                    # y = 1.0/np.sqrt(n)
+                    # m.weight.data.uniform_(-y, y)
+                    # m.bias.data.fill_(0)
+                    # nn.init.orthogonal_(m.weight.data)
+                    # m.bias.data.fill_(0)
+                    # m.weight.data.fill_(0)
+                    nn.init.kaiming_normal_(m.weight.data)
+                else:
+                    pass
+        for m in [self.input_BN] :
+                if isinstance(m, nn.BatchNorm1d):
+                    if m.weight is not None:
+                        m.weight.data.normal_(0.0, 0.02)
+                    if m.bias is not None:
+                        m.bias.data.zero_()
+                elif isinstance(m, nn.Linear):
+                    nn.init.kaiming_normal_(m.weight.data)
+                else:
+                    pass
 
     def forward(self, X, seq_len, device):
         h_0 = self.init_hidden().to(device)
+        X = X.permute(1, 2, 0)
+        X = self.input_BN(X.float())
+        X = X.permute(2,0,1)
+        X = self.fc_before_rnn(X)
+
         packed = rnn_utils.pack_padded_sequence(X, seq_len, batch_first=False, enforce_sorted=False)
         packed = packed.float().to(device)
-        output, _ = self.gru(packed, h_0)
+        _, h = self.gru_first(packed, h_0)
+        output, _ = self.gru(packed, h)
+
+        # output, _ = self.gru(packed, h_0)
         unpacked, unpacked_len = rnn_utils.pad_packed_sequence(output)
         if self.type == 'Regression':
             output = self.fc(unpacked) # (seq_len, bath_num, output_size)

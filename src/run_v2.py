@@ -189,7 +189,7 @@ def mlp_classifications(args):
     temp = utils.sbp_dbp_target_converter(y.copy())
     uniques, counts = np.unique(temp, axis=0, return_counts=True)
     weight = torch.Tensor(counts)
-    weight = weight.sum() / weight
+    weight = 10. / weight.log()
     print(weight)
     sbp_criterion = nn.CrossEntropyLoss(weight=weight).cuda()
     # sbp_criterion = nn.CrossEntropyLoss().cuda()
@@ -318,8 +318,8 @@ def mlp_classifications(args):
                         sbp_confus_matrix, sbp_log = utils.confusion_matrix(sbp_pred_tensor, target_tensor[:,0], sbp_num_class)
                         dbp_confus_matrix, dbp_log = utils.confusion_matrix(dbp_pred_tensor, target_tensor[:,1], dbp_num_class)
                         
-                        utils.confusion_matrix_save_as_img(sbp_confus_matrix.detach().cpu().numpy(), args.save_result_root, epoch, 'sbp')
-                        utils.confusion_matrix_save_as_img(dbp_confus_matrix.detach().cpu().numpy(), args.save_result_root, epoch, 'dbp')
+                        utils.confusion_matrix_save_as_img(sbp_confus_matrix.detach().cpu().numpy(), args.save_result_root, epoch, name='sbp')
+                        utils.confusion_matrix_save_as_img(dbp_confus_matrix.detach().cpu().numpy(), args.save_result_root, epoch, name='dbp')
                         for c in range(sbp_num_class):
                             per_class = {'Sensitivity': sbp_log[0]['class_{}'.format(c)], 'Specificity': sbp_log[1]['class_{}'.format(c)]}
                             writer.add_scalars('SBP_Metrics/class_{}'.format(c), per_class, iteration)
