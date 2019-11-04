@@ -99,8 +99,8 @@ def rnn_classification(args):
     # weight2 = torch.Tensor([10.9833,  8.5890,  1.7667,  7.9806,  9.8818]).cuda()
     # weight1 = torch.Tensor([10.7397,  8.3084,  9.2054,  5.0,  9.0630,  7.2462, 11.1666]).cuda()
     # weight2 = torch.Tensor([10.9833,  8.5890,  5.0,  7.9806,  9.8818]).cuda()
-    weight1 = torch.Tensor([1.07397,  0.83084,  0.92054,  0.50,  0.90630,  0.72462, 1.11666]).cuda()
-    weight2 = torch.Tensor([1.09833,  0.85890,  0.50,  0.79806,  0.98818]).cuda()
+    weight1 = torch.Tensor([1.07397,  0.83084,  0.92054,  0.40,  0.90630,  0.72462, 1.11666]).cuda()
+    weight2 = torch.Tensor([1.09833,  0.85890,  0.40,  0.79806,  0.98818]).cuda()
     # tensor([10.7397,  8.3084,  9.2054,  2.9412,  9.0630,  7.2462, 11.1666],
     #    device='cuda:0') tensor([10.9833,  8.5890,  1.7667,  7.9806,  9.8818], device='cuda:0')
     # weight1 = torch.from_numpy(1 / (weight1 / np.sum(weight1))).float()
@@ -109,7 +109,7 @@ def rnn_classification(args):
     # weight2 = weight2.to(device)
 
     ori_len = len(train_data)
-    train_data = [train_data[i] for i in range(90000)]
+    train_data = [train_data[i] for i in range(60000)]
 
     train_seq_len_list = [len(x) for x in train_data]
     train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
@@ -143,8 +143,8 @@ def rnn_classification(args):
     total_step = len(train_loader)
     for epoch in range(num_epochs):
         # if epoch in args.lr_decay_epoch:
-        for param_group in optimizer.param_groups:
-            param_group['lr'] *= args.lr_decay_rate
+        # for param_group in optimizer.param_groups:
+        #     param_group['lr'] *= args.lr_decay_rate
         
         model.train()
 
@@ -200,28 +200,31 @@ def rnn_classification(args):
                 utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch + 1, batch_idx + 1, 'train', 'sbp')
                 utils.confusion_matrix_save_as_img(dbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch + 1, batch_idx + 1, 'train', 'dbp')
 
+                model.eval()
+
+                val_running_loss, val_size, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification(val_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
+
                 sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred1, flattened_target[:, 0], num_class1)
                 dbp_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 1], num_class2)
                 utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch , batch_idx + 1, 'val', 'sbp')
                 utils.confusion_matrix_save_as_img(dbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch , batch_idx + 1, 'val', 'dbp')
 
-                model.eval()
-
-                val_running_loss, val_size, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification(val_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
-                if best_loss > val_running_loss :
+                
+                # if best_loss > val_running_loss :
+                if epoch % 50 == 1 :
                     print("Saving model ...")
                     best_loss = val_running_loss
                     state = {'epoch': (epoch + 1), 'iteration': (batch_idx+1) + (total_step) * (epoch), 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
-                    torch.save(state, log_dir+'/epoch{}_iter{}_loss{:.4f}.model'.format(epoch, (batch_idx+1) + (total_step) * (epoch), val_running_loss))
+                    torch.save(state, log_dir+'/{}epoch.model'.format(epoch))
 
                     sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred1, flattened_target[:, 0], num_class1)
                     dbp_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 1], num_class2)
                     utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch, batch_idx + 1, 'val', 'sbp')
                     utils.confusion_matrix_save_as_img(dbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch, batch_idx + 1, 'val', 'dbp')
                     
-                writer.add_scalar('Loss/Val', val_running_loss/val_size, (batch_idx+1) +  total_step* epoch)
-                writer.add_scalar('SBP_Accuracy/Val', sbp_accuracy, (batch_idx + 1) + total_step * epoch)
-                writer.add_scalar('DBP_Accuracy/Val', dbp_accuracy, (batch_idx + 1) + total_step * epoch)
+                # writer.add_scalar('Loss/Val', val_running_loss/val_size, (batch_idx+1) +  total_step* epoch)
+                # writer.add_scalar('SBP_Accuracy/Val', sbp_accuracy, (batch_idx + 1) + total_step * epoch)
+                # writer.add_scalar('DBP_Accuracy/Val', dbp_accuracy, (batch_idx + 1) + total_step * epoch)
 
         scheduler.step(((running_sbp_loss+running_dbp_loss)/2)/total)
 

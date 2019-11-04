@@ -11,12 +11,11 @@ python3 -W ignore ./src/run_rnn.py \
 --model_type='rnn' \
 --optim='SGD' \
 \
---lr=2e-3 \
---lr_decay_rate=0.97 \
+--lr=1e-2 \
 --weight_decay=0.000 \
---max_epoch=100 \
+--max_epoch=1000 \
 --hidden_size=256 \
---rnn_hidden_layers 1 \
+--rnn_hidden_layers 2 \
 --batch_size=16 \
 \
 --snapshot_epoch_freq=1 \
