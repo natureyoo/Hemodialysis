@@ -29,6 +29,8 @@ class RNN(nn.Module):
         self.dropout_rate = dropout_rate
         self.type = type
 
+        self.fc_before_gru = nn.Sequential(nn.Linear(input_size, 128), nn.ReLU(), nn.Linear(128, 64))
+
         # CRU , FC
         self.gru = nn.GRU(input_size, hidden_size, num_layer, dropout=dropout_rate)
         if self.type == 'Regression':
@@ -39,7 +41,12 @@ class RNN(nn.Module):
 
     def forward(self, X, seq_len, device):
         h_0 = self.init_hidden().to(device)
-        packed = rnn_utils.pack_padded_sequence(X, seq_len, batch_first=False, enforce_sorted=False)
+        X = self.fc_before_gru(X)
+
+        sorted_seq_len, argsort_seq = seq_len.sort()
+        _, argargsort_seq = argsort_seq.sort()
+
+        packed = rnn_utils.pack_padded_sequence(X[argsort_seq], sorted_seq_len, batch_first=False, enforce_sorted=True)
         packed = packed.float().to(device)
         output, _ = self.gru(packed, h_0)
         unpacked, unpacked_len = rnn_utils.pad_packed_sequence(output)

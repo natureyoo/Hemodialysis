@@ -426,8 +426,10 @@ def rnn_classification():
     weight2 = weight2.to(device)
 
     train_seq_len_list = [len(x) for x in train_data]
-    train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
-    train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
+    train_data = [torch.tensor(x) for x in train_data]
+    # train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
+    # train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
+    train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=type)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
     val_data = torch.load('./tensor_data/RNN/Validation.pt')
@@ -450,7 +452,7 @@ def rnn_classification():
         running_loss = 0
         total = 0
         for i, (inputs, targets, seq_len) in enumerate(train_loader):
-            inputs = inputs.permute(1,0,2).to(device)
+            # inputs = inputs.permute(1,0,2).to(device)
             targets = targets.float().permute(1,0,2).to(device)
             seq_len = seq_len.to(device)
 
