@@ -42,6 +42,9 @@ result*/*
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
+.idea/misc.xml
+.idea/encodings.xml
+.idea/Hemodialysis.iml
 
 # Generated files
 .idea/**/contentModel.xml

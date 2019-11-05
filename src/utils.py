@@ -224,20 +224,23 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
         total_target = torch.tensor([]).to(device)
 
         for i, (inputs, targets, seq_len) in enumerate(loader):
-            inputs = inputs.permute(1, 0, 2).to(device)
-            targets = targets.float().permute(1, 0, 2).to(device)
+            inputs = inputs.float().to(device)
+            targets = targets.float().to(device)
             seq_len = seq_len.to(device)
 
-            output1, output2 = model(inputs, seq_len, device)
+            sorted_seq_len, argsort_seq = seq_len.sort(reverse=True)
+
+            output1, output2 = model(inputs[argsort_seq], sorted_seq_len, device)
+            targets = targets[argsort_seq]
 
             flattened_output1 = torch.tensor([]).to(device)
             flattened_output2 = torch.tensor([]).to(device)
             flattened_target = torch.tensor([]).to(device)
 
-            for idx, seq in enumerate(seq_len):
-                flattened_output1 = torch.cat([flattened_output1, output1[:seq, idx, :].reshape(-1, num_class1)], dim=0)
-                flattened_output2 = torch.cat([flattened_output2, output2[:seq, idx, :].reshape(-1, num_class2)], dim=0)
-                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
+            for idx, seq in enumerate(sorted_seq_len):
+                flattened_output1 = torch.cat([flattened_output1, output1[idx, :seq, :].reshape(-1, num_class1)], dim=0)
+                flattened_output2 = torch.cat([flattened_output2, output2[idx, :seq, :].reshape(-1, num_class2)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[idx, :seq, :].reshape(-1, output_size)), dim=0)
 
             loss1 = criterion1(flattened_output1, flattened_target[:, 0].long())
             loss2 = criterion2(flattened_output2, flattened_target[:, 1].long())

@@ -12,9 +12,9 @@ python3 -W ignore ./src/run.py \
 \
 --lr=0.001 \
 --weight_decay=0.001 \
---max_epoch=200 \
---hidden_size=512 \
---batch_size=16 \
+--max_epoch=10 \
+--hidden_size=32 \
+--batch_size=32 \
 \
 --snapshot_epoch_freq=1 \
 --valid_iter_freq=1000

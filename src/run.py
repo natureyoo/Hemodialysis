@@ -7,36 +7,43 @@ import numpy as np
 import loader
 import utils
 import argparse
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 from datetime import datetime
 import numpy.random as random
 import sampler
 # from csv_parser import HemodialysisDataset
+sys.path.append('./src')
+def parse_arg():
+    parser = argparse.ArgumentParser(description='Prediction Blood Pressure during Hemodialysis using Deep Learning model')
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--save_result_root')
-parser.add_argument('--bash_file')
-parser.add_argument('--only_train')
-parser.add_argument('--target_type')
-parser.add_argument('--model_type')
+    parser.add_argument('--save_result_root', type=str)
+    parser.add_argument('--bash_file', type=str)
+    parser.add_argument('--only_train')
+    parser.add_argument('--target_type', type=str, required=True)
+    parser.add_argument('--model_type', type=str, required=True)
 
-parser.add_argument('--lr', type=float)
-parser.add_argument('--weight_decay', type=float)
-parser.add_argument('--max_epoch', type=int)
-parser.add_argument('--hidden_size', type=int)
-parser.add_argument('--batch_size', type=int)
-parser.add_argument('--optim', required=False)
-parser.add_argument('--loss', required=False)
-parser.add_argument('--sampler', default=0, type=int)
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default 0.001)')
+    parser.add_argument('--lr_decay_rate', type=float)
+    parser.add_argument('--lr_decay_epoch', default=[15,40,70,100])
+    parser.add_argument('--weight_decay', type=float, default=0.0001)
+    parser.add_argument('--max_epoch', type=int, default=10)
+    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--rnn_hidden_layers', type=int, default=0)
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--optim', default='SGD')
+    parser.add_argument('--loss', required=False)
+    parser.add_argument('--sampler', default=False)
+    parser.add_argument('--train_print_freq', default=5624, type=int)
 
-parser.add_argument('--snapshot_epoch_freq', default=1, type=int)
-parser.add_argument('--valid_iter_freq', default=500, type=int)
-parser.add_argument('--description', default='')
+    parser.add_argument('--snapshot_epoch_freq', default=1, type=int)
+    parser.add_argument('--valid_iter_freq', default=500, type=int)
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
+    print('\n{}\n'.format(args))
 
-
+    return args
 
 
 def mlp_regression(args):
@@ -386,7 +393,7 @@ def rnn_regression():
     test_loss, test_size = utils.eval_rnn_regression(test_loader, model, device, output_size, criterion)
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
 
-def rnn_classification():
+def rnn_classification(args):
     input_size = 143
     hidden_size = args.hidden_size
     num_layers = 5
@@ -426,10 +433,8 @@ def rnn_classification():
     weight2 = weight2.to(device)
 
     train_seq_len_list = [len(x) for x in train_data]
-    train_data = [torch.tensor(x) for x in train_data]
-    # train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
-    # train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
-    train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=type)
+    train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
+    train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=type)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
     val_data = torch.load('./tensor_data/RNN/Validation.pt')
@@ -452,20 +457,23 @@ def rnn_classification():
         running_loss = 0
         total = 0
         for i, (inputs, targets, seq_len) in enumerate(train_loader):
-            # inputs = inputs.permute(1,0,2).to(device)
-            targets = targets.float().permute(1,0,2).to(device)
+            inputs = inputs.float().to(device)
+            targets = targets.float().to(device)
             seq_len = seq_len.to(device)
 
-            output1, output2 = model(inputs, seq_len, device)
+            sorted_seq_len, argsort_seq = seq_len.sort(reverse=True)
+
+            output1, output2 = model(inputs[argsort_seq], sorted_seq_len, device)
+            targets = targets[argsort_seq]
 
             flattened_output1 = torch.tensor([]).to(device)
             flattened_output2 = torch.tensor([]).to(device)
             flattened_target = torch.tensor([]).to(device)
 
-            for idx, seq in enumerate(seq_len):
-                flattened_output1 = torch.cat([flattened_output1, output1[:seq, idx, :].reshape(-1, num_class1)], dim=0)
-                flattened_output2 = torch.cat([flattened_output2, output2[:seq, idx, :].reshape(-1, num_class2)], dim=0)
-                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
+            for idx, seq in enumerate(sorted_seq_len):
+                flattened_output1 = torch.cat([flattened_output1, output1[idx, :seq, :].reshape(-1, num_class1)], dim=0)
+                flattened_output2 = torch.cat([flattened_output2, output2[idx, :seq, :].reshape(-1, num_class2)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[idx, :seq, :].reshape(-1, output_size)), dim=0)
 
             loss1 = criterion1(flattened_output1, flattened_target[:, 0].long())
             loss2 = criterion2(flattened_output2, flattened_target[:, 1].long())
@@ -477,7 +485,7 @@ def rnn_classification():
             loss.backward()
             optimizer.step()
 
-            if (i + 1) % 3000 == 0:
+            if (i + 1) % 100 == 0:
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, num_epochs, i + 1, total_step, running_loss/total))
                 # writer.add_scalar('Loss/Train', loss.item(), (i + 1) + total_step * epoch)
                 _, pred1 = torch.max(flattened_output1, 1)

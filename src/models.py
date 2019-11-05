@@ -29,32 +29,35 @@ class RNN(nn.Module):
         self.dropout_rate = dropout_rate
         self.type = type
 
-        self.fc_before_gru = nn.Sequential(nn.Linear(input_size, 128), nn.ReLU(), nn.Linear(128, 64))
+        self.fc_before_gru = nn.Sequential(nn.Linear(input_size, 128), nn.ReLU(), nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, hidden_size))
 
         # CRU , FC
-        self.gru = nn.GRU(input_size, hidden_size, num_layer, dropout=dropout_rate)
+        self.gru = nn.GRU(hidden_size, hidden_size, num_layer, dropout=dropout_rate)
+
+        self.fc_after_gru = nn.Sequential(nn.Linear(hidden_size, hidden_size // 2), nn.ReLU(), nn.Linear(hidden_size // 2, hidden_size), nn.ReLU())
+
         if self.type == 'Regression':
             self.fc = nn.Linear(hidden_size, output_size)
         else:
-            self.fc_class1 = nn.Linear(hidden_size, 7)
-            self.fc_class2 = nn.Linear(hidden_size, 5)
+            self.fc_class1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, 7))
+            self.fc_class2 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, 5))
 
     def forward(self, X, seq_len, device):
         h_0 = self.init_hidden().to(device)
+
         X = self.fc_before_gru(X)
 
-        sorted_seq_len, argsort_seq = seq_len.sort()
-        _, argargsort_seq = argsort_seq.sort()
-
-        packed = rnn_utils.pack_padded_sequence(X[argsort_seq], sorted_seq_len, batch_first=False, enforce_sorted=True)
+        packed = rnn_utils.pack_padded_sequence(X, seq_len, batch_first=True, enforce_sorted=True)
         packed = packed.float().to(device)
         output, _ = self.gru(packed, h_0)
-        unpacked, unpacked_len = rnn_utils.pad_packed_sequence(output)
+        output, _ = rnn_utils.pad_packed_sequence(output)
+
+        output = self.fc_after_gru(output)
         if self.type == 'Regression':
-            output = self.fc(unpacked) # (seq_len, bath_num, output_size)
+            output = self.fc(output) # (seq_len, bath_num, output_size)
             return output
         else:
-            output1, output2 = self.fc_class1(unpacked), self.fc_class2(unpacked)
+            output1, output2 = self.fc_class1(output), self.fc_class2(output)
             return output1, output2
 
     def init_hidden(self):
