@@ -52,7 +52,7 @@ def parse_arg():
 
 
 def rnn_classification(args):
-    input_size = 37
+    input_size = 36
     # input_size = 143
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
@@ -91,14 +91,14 @@ def rnn_classification(args):
     # load###############################################
     #####################################################
 
-    train_data = torch.load('./tensor_data/RNN/60min/Train1_0_60min.pt')
+    train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Train1_60min.pt')
     # train_data = train_data[:int(len(train_data)*0.666)]              # using 66% data
 
 
     # feature selection, manually.
     for i in range(len(train_data)):
         train_data[i] = train_data[i][:,1:] # remove masking
-        train_data[i] = np.concatenate((train_data[i][:,:3], train_data[i][:,4:10],train_data[i][:,12:18], train_data[i][:,24:39], train_data[i][:,-14:-7], train_data[i][:,-6:]), axis=1)
+        train_data[i] = np.concatenate((train_data[i][:,:2], train_data[i][:,3:9],train_data[i][:,11:17], train_data[i][:,23:38], train_data[i][:,-18:-11], train_data[i][:,-10:]), axis=1)
 
     ori_len = len(train_data)
 
@@ -111,11 +111,11 @@ def rnn_classification(args):
     train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=task_type, ntime=60)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
-    val_data = torch.load('./tensor_data/RNN/60min/Validation_0_60min.pt')
+    val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Validation_60min.pt')
 
     for i in range(len(val_data)):
         val_data[i] = val_data[i][:,1:]
-        val_data[i] = np.concatenate((val_data[i][:,:2], val_data[i][:,3:9],val_data[i][:,11:17], val_data[i][:,23:38],val_data[i][:,-15:-8], val_data[i][:,-7:]), axis=1)
+        val_data[i] = np.concatenate((val_data[i][:,:2], val_data[i][:,3:9],val_data[i][:,11:17], val_data[i][:,23:38],val_data[i][:,-18:-11], val_data[i][:,-10:]), axis=1)
 
     val_seq_len_list = [len(x) for x in val_data]
     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])

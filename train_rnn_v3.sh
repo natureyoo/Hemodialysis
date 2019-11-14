@@ -23,4 +23,4 @@ python3 -W ignore ./src/run_rnn_v3.py \
 --snapshot_epoch_freq=1 \
 --valid_iter_freq=1000 \
 --train_print_freq=50 \
---init_epoch=0 \
+--init_epoch=0
