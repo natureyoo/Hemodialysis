@@ -15,10 +15,15 @@ class HD_Dataset(Dataset):
         return len(self.input)
 
 class RNN_Dataset(Dataset):
-    def __init__(self, data, type):
+    def __init__(self, data, type, ntime=None):
         super().__init__()
-        self.input = data[0][:,:,:-4]
-        self.target = data[0][:,:,-4:]
+        self.ntime = ntime
+        if ntime is None:
+            self.input = data[0][:,:,:-4]
+            self.target = data[0][:,:,-4:]
+        else :
+            self.input = data[0][:,:,:-7]
+            self.target = data[0][:,:,-7:]
         self.seq_len = data[1]
         self.type = type
 
@@ -26,7 +31,10 @@ class RNN_Dataset(Dataset):
         if self.type == 'Regression':
             x, y = self.input[:,idx,:], self.target[:,idx,:2]
         else:
-            x, y = self.input[:,idx,:], self.target[:,idx,2:]
+            if self.ntime is None:
+                x, y = self.input[:,idx,:], self.target[:,idx,2:]
+            else:
+                x, y = self.input[:,idx,:], self.target[:,idx,4:]
         batch_seq_len = self.seq_len[idx]
         return (x, y, batch_seq_len)
 
