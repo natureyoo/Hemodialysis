@@ -698,8 +698,11 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
         sbp_init_value = sbp_list[data_idx][0]
         dbp_init_value = data[data_idx][0,13]*std_VS_dbp+mean_VS_dbp
         map_init_value = map_list[data_idx][0]
+        dbp_init_value = data[data_idx][0,13] * std_VS_dbp + mean_VS_dbp
         sbp_diff = sbp_absolute_value - sbp_init_value
         map_diff = map_list[data_idx] - map_init_value
+
+        real_flag = [x[0] == 1 for x in data[data_idx]]
 
         # print()
         # print('c_time_list[{}]: '.format(data_idx), c_time_list[data_idx])
@@ -713,15 +716,22 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
 
         temp_data_concat = np.zeros((len(sbp_diff), 3))
         for frame_idx in range(len(data[data_idx])):
-            criterion_flag = c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx][frame_idx:] # shape : [True, True, True, True, False, False, False, ....]
-            criterion_flag_count = criterion_flag.astype(int).sum(0)                           # 60분 안에 해당되는게 몇개냐?
+            criterion_flag = ((c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx])) # shape : [True, True, True, True, False, False, False, ....]
+            real_criterion_flag = criterion_flag & data[data_idx]
 
-            if np.sum((sbp_diff[frame_idx:frame_idx+criterion_flag_count]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
+            if np.sum((sbp_diff[criterion_flag]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
             else : sbp_exist = 0
-            if np.sum((map_diff[frame_idx:frame_idx+criterion_flag_count]<=-10).astype(int)) : map_exist = 1
+            if np.sum((map_diff[criterion_flag]<=-10).astype(int)) : map_exist = 1
             else : map_exist = 0
-            if np.sum((sbp_absolute_value[frame_idx:frame_idx+criterion_flag_count]<=90).astype(int)) : sbp_under_90 = 1
+            if np.sum((sbp_absolute_value[criterion_flag]<=90).astype(int)) : sbp_under_90 = 1
             else : sbp_under_90 = 0
+
+            if np.sum((sbp_diff[criterion_flag & real_flag]<=-20).astype(int)) : real_sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
+            else : real_sbp_exist = 0
+            if np.sum((map_diff[criterion_flag & real_flag]<=-10).astype(int)) : real_map_exist = 1
+            else : real_map_exist = 0
+            if np.sum((sbp_absolute_value[criterion_flag & real_flag]<=90).astype(int)) : real_sbp_under_90 = 1
+            else : real_sbp_under_90 = 0
 
             if frame_idx == (len(data[data_idx])-1):    # sbp_list가 각 frame의 sbp를 가져왔는데, 마지막 frame은 다음 target frame을 반영해줘야 했었음.
                 last_target_sbp = (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value ).astype(int)
@@ -733,7 +743,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
                 if last_target_sbp <= -90 : sbp_under_90 = 1
                 else: sbp_under_90 = 0
 
-            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90))
+            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90))
         data[data_idx] = np.concatenate((data[data_idx], temp_data_concat), axis=1)
 
     torch.save(data, './tensor_data/RNN/60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
