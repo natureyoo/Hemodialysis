@@ -694,6 +694,8 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
 
 
     for data_idx in range(len(data)):
+        if data_idx == 1000:
+            print('{}_{}'.format(d_type, data_idx))
         sbp_absolute_value = sbp_list[data_idx]
         sbp_init_value = sbp_list[data_idx][0]
         dbp_init_value = data[data_idx][0,13]*std_VS_dbp+mean_VS_dbp
@@ -714,10 +716,9 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
         # print('sbp_diff[{}]:'.format(data_idx), sbp_diff)
         # print('map_diff[{}]:'.format(data_idx), map_diff)
 
-        temp_data_concat = np.zeros((len(sbp_diff), 3))
+        temp_data_concat = np.zeros((len(sbp_diff), 6))
         for frame_idx in range(len(data[data_idx])):
-            criterion_flag = ((c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx])) # shape : [True, True, True, True, False, False, False, ....]
-            real_criterion_flag = criterion_flag & data[data_idx]
+            criterion_flag = (c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx]) # shape : [True, True, True, True, False, False, False, ....]
 
             if np.sum((sbp_diff[criterion_flag]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
             else : sbp_exist = 0
@@ -746,7 +747,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
             temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90))
         data[data_idx] = np.concatenate((data[data_idx], temp_data_concat), axis=1)
 
-    torch.save(data, './tensor_data/RNN/60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
+    torch.save(data, '../data/tensor_data/Interpolation_RNN_60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
 
 # version3 용 eval.
 def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, log_dir=None, epoch=None):
@@ -762,7 +763,7 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
         total_target = torch.tensor([]).to(device)
 
 
-        for i, (inputs, targets, seq_len) in enumerate(loader):
+        for i, (inputs, (targets, targets_real), seq_len) in enumerate(loader):
             inputs = inputs.permute(1, 0, 2).to(device)
             targets = targets.float().permute(1, 0, 2).to(device)
             seq_len = seq_len.to(device)

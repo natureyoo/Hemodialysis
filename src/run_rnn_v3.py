@@ -179,7 +179,7 @@ def rnn_classification(args):
         
         total = 0
         train_total, train_correct_sbp,train_correct_map, train_correct_under_90 = 0,0,0,0
-        for batch_idx, (inputs, targets, seq_len) in enumerate(train_loader):
+        for batch_idx, (inputs, (targets, targets_real), seq_len) in enumerate(train_loader):
             inputs = inputs.permute(1,0,2).to(device)
             targets = targets.float().permute(1,0,2).to(device)
             seq_len = seq_len.to(device)

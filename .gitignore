@@ -108,6 +108,7 @@ fabric.properties
 # *.iml
 # modules.xml
 .idea/misc.xml
+.idea/Hemodialysis.iml
 # *.ipr
 
 # Sonarlint plugin
