@@ -52,7 +52,7 @@ def parse_arg():
 
 
 def rnn_classification(args):
-    input_size = 37
+    input_size = 143
     # input_size = 143
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
@@ -92,15 +92,15 @@ def rnn_classification(args):
     #####################################################
 
     train_data = torch.load('./tensor_data/RNN/60min/Train1_0_60min.pt')
-    # train_data = train_data[:int(len(train_data)*0.666)]              # using 66% data
+    train_data = train_data[:int(len(train_data)*0.1)]              # using 10% data
 
 
     # feature selection, manually.
     for i in range(len(train_data)):
         train_data[i] = train_data[i][:,1:] # remove masking
-        train_data[i] = np.concatenate((train_data[i][:,:3], train_data[i][:,4:10],train_data[i][:,12:18], train_data[i][:,24:39], train_data[i][:,-14:-7], train_data[i][:,-6:]), axis=1)
-
-    ori_len = len(train_data)
+        # train_data[i] = np.concatenate((train_data[i][:,:3], train_data[i][:,4:10],train_data[i][:,12:18], train_data[i][:,24:39], train_data[i][:,-14:-7], train_data[i][:,-6:]), axis=1)
+    print(train_data[0].shape)
+    ori_len = len(train_data) # Sample num of train data
 
     train_seq_len_list = [len(x) for x in train_data]
 
@@ -112,16 +112,18 @@ def rnn_classification(args):
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
     val_data = torch.load('./tensor_data/RNN/60min/Validation_0_60min.pt')
+    val_data = val_data[:int(len(val_data) * 0.1)]
 
-    for i in range(len(val_data)):
-        val_data[i] = val_data[i][:,1:]
-        val_data[i] = np.concatenate((val_data[i][:,:2], val_data[i][:,3:9],val_data[i][:,11:17], val_data[i][:,23:38],val_data[i][:,-15:-8], val_data[i][:,-7:]), axis=1)
-
+    # mask = torch.Tensor().to(device)
+    # for i in range(len(val_data)):
+    #     # mask = torch.cat([mask, torch.Tensor(val_data[i][:,1]).to(device)], dim=0)
+    #     val_data[i] = np.concatenate((val_data[i][:,:3], val_data[i][:,4:10],val_data[i][:,12:18], val_data[i][:,24:39],val_data[i][:,-14:-7], val_data[i][:,-6:]), axis=1)
+    print(val_data[0].shape)
     val_seq_len_list = [len(x) for x in val_data]
     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
     del val_data
     print('del val data ok')
-    val_data = loader.RNN_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
+    val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
     val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
 
     # criterion1 = nn.CrossEntropyLoss(weight=weight1).to(device)
@@ -215,9 +217,9 @@ def rnn_classification(args):
 
             running_loss = loss.item() * (1./(batch_idx+1.)) + running_loss * (batch_idx/(batch_idx+1.))
 
-            pred0 = (F.sigmoid(flattened_output[:,0]) > 0.5).int()  # output : 1 or 0 --> 1: abnormal / 0: normal
-            pred1 = (F.sigmoid(flattened_output[:,1]) > 0.5).int()  # TODO : 0.5 --> args.threshold
-            pred2 = (F.sigmoid(flattened_output[:,2]) > 0.5).int()
+            pred0 = (F.sigmoid(flattened_output[:,0]) > 0.5).long()  # output : 1 or 0 --> 1: abnormal / 0: normal
+            pred1 = (F.sigmoid(flattened_output[:,1]) > 0.5).long() # TODO : 0.5 --> args.threshold
+            pred2 = (F.sigmoid(flattened_output[:,2]) > 0.5).long()
             
             train_correct_sbp += (pred0 == flattened_target[:, 0].long()).sum().item() 
             train_correct_map += (pred1 == flattened_target[:, 1].long()).sum().item()
@@ -249,7 +251,7 @@ def rnn_classification(args):
     ####################################################################3
     # TODO : test 
     print("\n\n\n ***Start testing***")
-    test_data = torch.load('tensor_data/RNN/Test.pt')
+    test_data = torch.load('tensor_data/RNN/60min/Test.pt')
     test_seq_len_list = [len(x) for x in test_data]
     test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
     test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Classification', ntime=60)
