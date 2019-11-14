@@ -696,6 +696,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
     for data_idx in range(len(data)):
         sbp_absolute_value = sbp_list[data_idx]
         sbp_init_value = sbp_list[data_idx][0]
+        dbp_init_value = data[data_idx][0,13]*std_VS_dbp+mean_VS_dbp
         map_init_value = map_list[data_idx][0]
         sbp_diff = sbp_absolute_value - sbp_init_value
         map_diff = map_list[data_idx] - map_init_value
@@ -712,7 +713,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
 
         temp_data_concat = np.zeros((len(sbp_diff), 3))
         for frame_idx in range(len(data[data_idx])):
-            criterion_flag = c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx] # shape : [True, True, True, True, False, False, False, ....]
+            criterion_flag = c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx][frame_idx:] # shape : [True, True, True, True, False, False, False, ....]
             criterion_flag_count = criterion_flag.astype(int).sum(0)                           # 60분 안에 해당되는게 몇개냐?
 
             if np.sum((sbp_diff[frame_idx:frame_idx+criterion_flag_count]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
@@ -724,7 +725,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
 
             if frame_idx == (len(data[data_idx])-1):    # sbp_list가 각 frame의 sbp를 가져왔는데, 마지막 frame은 다음 target frame을 반영해줘야 했었음.
                 last_target_sbp = (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value ).astype(int)
-                last_target_map = ((data[data_idx][-1,-3]*std_VS_dbp+mean_VS_dbp) / 3. + (data[data_idx][-1,-4]*std_VS_sbp+mean_VS_sbp) * 2. / 3.).astype(int)
+                last_target_map = ((data[data_idx][-1,-3]*std_VS_dbp + dbp_init_value) / 3. + (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value) * 2. / 3.).astype(int)
                 if last_target_sbp - sbp_init_value <= -20 : sbp_exist = 1
                 else: sbp_exist = 0
                 if last_target_map - map_init_value <= -10 : map_exist = 1
