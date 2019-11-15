@@ -781,9 +781,7 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             # total += len(seq_len)
             running_loss += loss.item()
 
-            output_txt_save_for_curve(F.sigmoid(output[:, 0]), targets[:, 0], 'sbp', 'Validation', log_dir, epoch)
-            output_txt_save_for_curve(F.sigmoid(output[:, 1]), targets[:, 1], 'map', 'Validation', log_dir, epoch)
-            output_txt_save_for_curve(F.sigmoid(output[:, 2]), targets[:, 2], 'under90', 'Validation', log_dir, epoch)
+            confidence_save_and_cal_auroc(F.sigmoid(output), targets, 'Validation', log_dir, epoch, cal_roc=True)
 
             pred0 = (F.sigmoid(output[:,0]) > threshold).long()  # TODO : threshold
             pred1 = (F.sigmoid(output[:,1]) > threshold).long()
@@ -809,23 +807,28 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
     return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
 
 
-def output_txt_save_for_curve(mini_batch_outputs, mini_batch_targets, category, data_type, save_dir, epoch=9999):
+def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, cal_roc=True):
     '''
-    mini_batch_outputs shape : (개수) -> flattend_output[:,0]
-    category : sbp / map / under90
+    mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
     data_type : Train / Validation / Test
     minibatch 별로 저장 될 수 있게 open(,'a')로 했는데, 저장 다 하면 f.close() 권하긴 함.
     '''
-    f = open('{}/confidence_{}_{}_{}.txt'.format(save_dir, epoch, data_type, category), 'a')
+    category = {'sbp':0, 'map':1 ,'under90':2}
 
-    for i in range(len(mini_batch_outputs)):
-        f.write("{}\t{}\n".format(mini_batch_outputs[i].item(), mini_batch_targets[i].item()))
+    for key, value in category:
+        f = open('{}/confidence_{}_{}_{}.txt'.format(save_dir, epoch, data_type, key), 'a')
+        for i in range(len(mini_batch_outputs[:,value])):
+            f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
+        
+        if cal_roc :
+            auroc = roc_curve_plot(save_dir, key, data_type, epoch)
+            return auroc
 
 
-def roc(load_dir, category='sbp', data_type='Validation', epoch=None):
+def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, save_dir=None):
     # calculate the AUROC
-    f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
-    f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
+    # f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
+    # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
 
     conf_and_target_array = np.loadtxt('{}/confidence_{}_{}_{}.txt'.format(load_dir, epoch, data_type, category),
                                        delimiter=',', dtype=np.str)
@@ -839,15 +842,21 @@ def roc(load_dir, category='sbp', data_type='Validation', epoch=None):
     start = np.min(file_[:, 0])
     end = np.max(file_[:, 0])
     
-    gap = (end-start) / 200000.
+    gap = (end-start) / 20000.
+    end = end+gap
+
     auroc = 0.0
     fprTemp = 1.0
     tpr_list, fpr_list = list(), list()
+    # for delta in np.arange(start, end, gap):
     for delta in np.arange(start, end, gap):
+        
         tpr = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
-        fpr = np.sum(file_[target_normal_idxs_flag, 0] >= delta) / np.sum(target_normal_idxs_flag)
-        f1.write("{}\n".format(tpr))
-        f2.write("{}\n".format(fpr))
+        fpr = np.sum(file_[target_normal_idxs_flag, 0] > delta) / np.sum(target_normal_idxs_flag)
+        # print(start, end, gap, delta, tpr, fpr)
+        # exit()
+        # f1.write("{}\n".format(tpr))
+        # f2.write("{}\n".format(fpr))
         tpr_list.append(tpr)
         fpr_list.append(fpr)
         auroc += (-fpr + fprTemp) * tpr
@@ -862,21 +871,24 @@ def roc(load_dir, category='sbp', data_type='Validation', epoch=None):
     plt.xlabel('FPR(False Positive Rate)')
     plt.ylabel('TPR(True Positive Rate)')
     ax.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
-    ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(load_dir, category, data_type, epoch))    # 다른 곳에 저장하고 싶으면 dir 변경
+
+    if save_dir is None:    # load dir에 저장
+        ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(load_dir, category, data_type, epoch), dpi=300)
+    else :                  # 다른 dir을 지정하여 저장
+        ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(save_dir, category, data_type, epoch), dpi=300)
     plt.close("all")
-    
-    print(auroc)
     return auroc
 
     
 
+# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/','map', 'Validation', 0)
 
-# roc('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder/1115_bs16_lr0.001_wdecay5e-06','sbp', 'Validation', 0)
-# roc('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder/1115_bs16_lr0.001_wdecay5e-06',
-#     'map', 'Validation', 0)
-# roc('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder/1115_bs16_lr0.001_wdecay5e-06',
+# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/','sbp', 'Validation', 0)
+
+# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/',
 #     'under90', 'Validation', 0)
 # exit()
+
 
 
 #TODO: Evaluation method 2 
