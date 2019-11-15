@@ -1,6 +1,7 @@
 import torch
 from models import *
 from torch.utils.data import DataLoader
+import torch.nn.utils.rnn as rnn_utils
 import torch.nn as nn
 import numpy as np
 import loader
@@ -72,7 +73,6 @@ def rnn_classification(args):
     log_dir = '{}/bs{}_lr{}_wdecay{}'.format(args.save_result_root, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
     writer = SummaryWriter(log_dir)
-
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     if args.model_type == 'rnn':
         model = RNN(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, task_type).to(device)
@@ -93,8 +93,7 @@ def rnn_classification(args):
     #####################################################
 
     train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Train1_60min.pt')
-    # train_data = train_data[:int(len(train_data)*0.1)]              # using 66% data
-
+    train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
     # feature selection, manually.
     for i in range(len(train_data)):
@@ -112,7 +111,7 @@ def rnn_classification(args):
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
     val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Validation_60min.pt')
-    # val_data = val_data[:int(len(val_data) * 0.1)]
+    val_data = val_data[:int(len(val_data) * 0.1)]
     # mask = torch.Tensor().to(device)
     # for i in range(len(val_data)):
     #     # mask = torch.cat([mask, torch.Tensor(val_data[i][:,1]).to(device)], dim=0)
@@ -123,7 +122,7 @@ def rnn_classification(args):
     del val_data
     print('del val data ok')
     val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
-    val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(dataset=val_data, batch_size=64, shuffle=False)
 
     # criterion1 = nn.CrossEntropyLoss(weight=weight1).to(device)
     # criterion2 = nn.CrossEntropyLoss(weight=weight2).to(device)
@@ -157,17 +156,10 @@ def rnn_classification(args):
         
         ##################################
         # eval ###########################
-        thres_list = [0.1, 0.3, 0.5, 0.7, 0.9]
-        for thres in thres_list :
-            model.eval()
-            criterion = BCE_loss_with_logit
-            val_running_loss, val_size, pred0, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, thres, log_dir=log_dir, epoch=epoch)
-            sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, flattened_target[:, 0], 2)
-            map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, flattened_target[:, 1], 2)
-            under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 2], 2)
-            utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir +'/{}'.format(thres), epoch , 0, 'val', 'sbp', v3=True)  # v3: version 3 --> sbp/map/under 90
-            utils.confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(), log_dir +'/{}'.format(thres), epoch , 0, 'val', 'map', v3=True)
-            utils.confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(), log_dir +'/{}'.format(thres), epoch , 0, 'val', 'under90', v3=True)
+        threshold = [0.1, 0.3, 0.5, 0.7, 0.9]
+        model.eval()
+        criterion = BCE_loss_with_logit
+        utils.eval_rnn_classification_v3_m2(val_loader, model, device, output_size, criterion, num_class1, num_class2, threshold, log_dir=log_dir, epoch=epoch)
 
         # 저장 : 매 epoch마다 하는데, 특정 epoch마다 하게 바꾸려면, epoch % args.print_freq == 0 등으로 추가
         state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
