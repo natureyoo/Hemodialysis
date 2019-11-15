@@ -784,7 +784,6 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             output_txt_save_for_curve(F.sigmoid(output[:, 0]), targets[:, 0], 'sbp', 'Validation', log_dir, epoch)
             output_txt_save_for_curve(F.sigmoid(output[:, 1]), targets[:, 1], 'map', 'Validation', log_dir, epoch)
             output_txt_save_for_curve(F.sigmoid(output[:, 2]), targets[:, 2], 'under90', 'Validation', log_dir, epoch)
-            exit()
 
             pred0 = (F.sigmoid(output[:,0]) > threshold).long()  # TODO : threshold
             pred1 = (F.sigmoid(output[:,1]) > threshold).long()
@@ -836,30 +835,48 @@ def roc(load_dir, category='sbp', data_type='Validation', epoch=None):
 
     target_abnormal_idxs_flag = (file_[:, 1] == 1)
     target_normal_idxs_flag = (file_[:, 1] == 0)
-    print(len(file_))
-    print(np.sum(target_abnormal_idxs_flag))
-    print(np.sum(target_normal_idxs_flag))
+ 
     start = np.min(file_[:, 0])
     end = np.max(file_[:, 0])
-    gap = -1e-4
+    
+    gap = (end-start) / 200000.
     auroc = 0.0
-    fprTemp = 0
-    for delta in np.arange(end, start, gap):
+    fprTemp = 1.0
+    tpr_list, fpr_list = list(), list()
+    for delta in np.arange(start, end, gap):
         tpr = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
         fpr = np.sum(file_[target_normal_idxs_flag, 0] >= delta) / np.sum(target_normal_idxs_flag)
         f1.write("{}\n".format(tpr))
         f2.write("{}\n".format(fpr))
-        auroc += (fpr - fprTemp) * tpr
+        tpr_list.append(tpr)
+        fpr_list.append(fpr)
+        auroc += (-fpr + fprTemp) * tpr
         fprTemp = fpr
+    
+    fig, ax = plt.subplots()
+    ax.plot(fpr_list, tpr_list,  linewidth=3 )
+    ax.axhline(y=1.0, color='black', linestyle='dashed')
+    ax.set_title('ROC {} {}epoch'.format(category, epoch))
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.05)
+    plt.xlabel('FPR(False Positive Rate)')
+    plt.ylabel('TPR(True Positive Rate)')
+    ax.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
+    ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(load_dir, category, data_type, epoch))    # 다른 곳에 저장하고 싶으면 dir 변경
+    plt.close("all")
+    
     print(auroc)
     return auroc
 
-roc('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Nov15_144907/bs16_lr0.001_wdecay5e-06','sbp', 'Validation', 0)
-roc('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Nov15_144907/bs16_lr0.001_wdecay5e-06',
-    'map', 'Validation', 0)
-roc('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Nov15_144907/bs16_lr0.001_wdecay5e-06',
-    'under90', 'Validation', 0)
-exit()
+    
+
+
+# roc('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder/1115_bs16_lr0.001_wdecay5e-06','sbp', 'Validation', 0)
+# roc('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder/1115_bs16_lr0.001_wdecay5e-06',
+#     'map', 'Validation', 0)
+# roc('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder/1115_bs16_lr0.001_wdecay5e-06',
+#     'under90', 'Validation', 0)
+# exit()
 
 
 #TODO: Evaluation method 2 
