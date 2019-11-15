@@ -52,8 +52,9 @@ def parse_arg():
 
 
 def rnn_classification(args):
+
+    # input_size = 36
     input_size = 143
-    # input_size = 143
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
     num_epochs = args.max_epoch
@@ -91,16 +92,15 @@ def rnn_classification(args):
     # load###############################################
     #####################################################
 
-    train_data = torch.load('./tensor_data/RNN/60min/Train1_0_60min.pt')
-    train_data = train_data[:int(len(train_data)*0.1)]              # using 10% data
+    train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Train1_60min.pt')
+    # train_data = train_data[:int(len(train_data)*0.1)]              # using 66% data
 
 
     # feature selection, manually.
     for i in range(len(train_data)):
         train_data[i] = train_data[i][:,1:] # remove masking
         # train_data[i] = np.concatenate((train_data[i][:,:3], train_data[i][:,4:10],train_data[i][:,12:18], train_data[i][:,24:39], train_data[i][:,-14:-7], train_data[i][:,-6:]), axis=1)
-    print(train_data[0].shape)
-    ori_len = len(train_data) # Sample num of train data
+    ori_len = len(train_data)
 
     train_seq_len_list = [len(x) for x in train_data]
 
@@ -111,14 +111,13 @@ def rnn_classification(args):
     train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=task_type, ntime=60)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
-    val_data = torch.load('./tensor_data/RNN/60min/Validation_0_60min.pt')
-    val_data = val_data[:int(len(val_data) * 0.1)]
-
+    val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Validation_60min.pt')
+    # val_data = val_data[:int(len(val_data) * 0.1)]
     # mask = torch.Tensor().to(device)
     # for i in range(len(val_data)):
     #     # mask = torch.cat([mask, torch.Tensor(val_data[i][:,1]).to(device)], dim=0)
     #     val_data[i] = np.concatenate((val_data[i][:,:3], val_data[i][:,4:10],val_data[i][:,12:18], val_data[i][:,24:39],val_data[i][:,-14:-7], val_data[i][:,-6:]), axis=1)
-    print(val_data[0].shape)
+
     val_seq_len_list = [len(x) for x in val_data]
     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
     del val_data
@@ -158,15 +157,17 @@ def rnn_classification(args):
         
         ##################################
         # eval ###########################
-        model.eval()
-        criterion = BCE_loss_with_logit
-        val_running_loss, val_size, pred0, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, log_dir=log_dir, epoch=epoch)
-        sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, flattened_target[:, 0], 2)
-        map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, flattened_target[:, 1], 2)
-        under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 2], 2)
-        utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir, epoch , 0, 'val', 'sbp', v3=True)  # v3: version 3 --> sbp/map/under 90
-        utils.confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(), log_dir, epoch , 0, 'val', 'map', v3=True)
-        utils.confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(), log_dir, epoch , 0, 'val', 'under90', v3=True)
+        thres_list = [0.1, 0.3, 0.5, 0.7, 0.9]
+        for thres in thres_list :
+            model.eval()
+            criterion = BCE_loss_with_logit
+            val_running_loss, val_size, pred0, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, thres, log_dir=log_dir, epoch=epoch)
+            sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, flattened_target[:, 0], 2)
+            map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, flattened_target[:, 1], 2)
+            under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 2], 2)
+            utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir +'/{}'.format(thres), epoch , 0, 'val', 'sbp', v3=True)  # v3: version 3 --> sbp/map/under 90
+            utils.confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(), log_dir +'/{}'.format(thres), epoch , 0, 'val', 'map', v3=True)
+            utils.confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(), log_dir +'/{}'.format(thres), epoch , 0, 'val', 'under90', v3=True)
 
         # 저장 : 매 epoch마다 하는데, 특정 epoch마다 하게 바꾸려면, epoch % args.print_freq == 0 등으로 추가
         state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
@@ -181,7 +182,7 @@ def rnn_classification(args):
         
         total = 0
         train_total, train_correct_sbp,train_correct_map, train_correct_under_90 = 0,0,0,0
-        for batch_idx, (inputs, targets, seq_len) in enumerate(train_loader):
+        for batch_idx, (inputs, (targets, targets_real), seq_len) in enumerate(train_loader):
             inputs = inputs.permute(1,0,2).to(device)
             targets = targets.float().permute(1,0,2).to(device)
             seq_len = seq_len.to(device)

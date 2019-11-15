@@ -573,8 +573,6 @@ def save_result_txt(outputs, targets, save_root, epoch, Flag='Test', ID=None, in
     txt_save_root = os.path.join(save_root)
     if not os.path.isdir(txt_save_root):
         os.makedirs(txt_save_root)
-    print(outputs.shape)
-    print(targets.shape)
     with open(txt_save_root+'result_{}epoch_{}.txt'.format(epoch, Flag), 'a') as f :
         if ID is not None:
             f.write('ID : {}\n'.format(str(ID.data.cpu().numpy())))
@@ -695,11 +693,17 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
 
 
     for data_idx in range(len(data)):
+        if data_idx == 1000:
+            print('{}_{}'.format(d_type, data_idx))
         sbp_absolute_value = sbp_list[data_idx]
         sbp_init_value = sbp_list[data_idx][0]
+        dbp_init_value = data[data_idx][0,13]*std_VS_dbp+mean_VS_dbp
         map_init_value = map_list[data_idx][0]
+        dbp_init_value = data[data_idx][0,13] * std_VS_dbp + mean_VS_dbp
         sbp_diff = sbp_absolute_value - sbp_init_value
         map_diff = map_list[data_idx] - map_init_value
+
+        real_flag = [x[0] == 1 for x in data[data_idx]]
 
         # print()
         # print('c_time_list[{}]: '.format(data_idx), c_time_list[data_idx])
@@ -711,21 +715,27 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
         # print('sbp_diff[{}]:'.format(data_idx), sbp_diff)
         # print('map_diff[{}]:'.format(data_idx), map_diff)
 
-        temp_data_concat = np.zeros((len(sbp_diff), 3))
+        temp_data_concat = np.zeros((len(sbp_diff), 6))
         for frame_idx in range(len(data[data_idx])):
-            criterion_flag = c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx] # shape : [True, True, True, True, False, False, False, ....]
-            criterion_flag_count = criterion_flag.astype(int).sum(0)                           # 60분 안에 해당되는게 몇개냐?
+            criterion_flag = (c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx]) # shape : [True, True, True, True, False, False, False, ....]
 
-            if np.sum((sbp_diff[frame_idx:frame_idx+criterion_flag_count]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
+            if np.sum((sbp_diff[criterion_flag]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
             else : sbp_exist = 0
-            if np.sum((map_diff[frame_idx:frame_idx+criterion_flag_count]<=-10).astype(int)) : map_exist = 1
+            if np.sum((map_diff[criterion_flag]<=-10).astype(int)) : map_exist = 1
             else : map_exist = 0
-            if np.sum((sbp_absolute_value[frame_idx:frame_idx+criterion_flag_count]<=90).astype(int)) : sbp_under_90 = 1
+            if np.sum((sbp_absolute_value[criterion_flag]<=90).astype(int)) : sbp_under_90 = 1
             else : sbp_under_90 = 0
+
+            if np.sum((sbp_diff[criterion_flag & real_flag]<=-20).astype(int)) : real_sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
+            else : real_sbp_exist = 0
+            if np.sum((map_diff[criterion_flag & real_flag]<=-10).astype(int)) : real_map_exist = 1
+            else : real_map_exist = 0
+            if np.sum((sbp_absolute_value[criterion_flag & real_flag]<=90).astype(int)) : real_sbp_under_90 = 1
+            else : real_sbp_under_90 = 0
 
             if frame_idx == (len(data[data_idx])-1):    # sbp_list가 각 frame의 sbp를 가져왔는데, 마지막 frame은 다음 target frame을 반영해줘야 했었음.
                 last_target_sbp = (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value ).astype(int)
-                last_target_map = ((data[data_idx][-1,-3]*std_VS_dbp+mean_VS_dbp) / 3. + (data[data_idx][-1,-4]*std_VS_sbp+mean_VS_sbp) * 2. / 3.).astype(int)
+                last_target_map = ((data[data_idx][-1,-3]*std_VS_dbp + dbp_init_value) / 3. + (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value) * 2. / 3.).astype(int)
                 if last_target_sbp - sbp_init_value <= -20 : sbp_exist = 1
                 else: sbp_exist = 0
                 if last_target_map - map_init_value <= -10 : map_exist = 1
@@ -733,10 +743,10 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
                 if last_target_sbp <= -90 : sbp_under_90 = 1
                 else: sbp_under_90 = 0
 
-            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90))
+            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90))
         data[data_idx] = np.concatenate((data[data_idx], temp_data_concat), axis=1)
 
-    torch.save(data, './tensor_data/RNN/60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
+    torch.save(data, '../data/tensor_data/Interpolation_RNN_60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
 
 # version3 용 eval.
 def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
@@ -752,10 +762,10 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
         total_target = torch.tensor([]).to(device)
 
 
-        for i, (inputs, targets, seq_len, mask) in enumerate(loader):
+        for i, (inputs, (targets, targets_real), seq_len, mask) in enumerate(loader):
             batch_size, padded_len, feature_len = inputs.shape[0], inputs.shape[1], inputs.shape[2]
             inputs = inputs.permute(1, 0, 2).to(device)
-            targets = targets.float().permute(1, 0, 2).to(device)
+            targets = targets_real.float().permute(1, 0, 2).to(device)
             output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
 
             mask = mask.byte().view(padded_len,batch_size).to(device)
@@ -784,7 +794,6 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             total_output1 = torch.cat([total_output1, pred1.long()], dim=0)
             total_output2 = torch.cat([total_output2, pred2.long()], dim=0)
             total_target = torch.cat([total_target, targets], dim=0)
-            print(targets.shape)
             if i < 100: # 오류는 안 날텐데...
                 save_result_txt(pred0.unsqueeze(-1), targets[:, 0], log_dir+'/txt/', epoch, 'val_sbp')
                 save_result_txt(pred1.unsqueeze(-1), targets[:, 1], log_dir+'/txt/', epoch, 'val_map')
@@ -795,76 +804,78 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
 
     return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
 
-def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
-    def return_normal_idx(target):
-        target_shifted = torch.cat([torch.ones(1,3).cuda(), target[1:,:]], dim=0)
-        normal_idx = target_shifted.byte()
-        return normal_idx
 
-    with torch.no_grad():
-        running_loss = 0
-        total = 0
-        val_correct0, val_correct1, val_correct2 = 0,0,0
-        val_total = 0
-
-        total_output0 = torch.tensor([], dtype=torch.long).to(device)
-        total_output1 = torch.tensor([], dtype=torch.long).to(device)
-        total_output2 = torch.tensor([], dtype=torch.long).to(device)
-        total_target = torch.tensor([]).to(device)
-
-
-        for i, (inputs, targets, seq_len) in enumerate(loader):
-            inputs = inputs.permute(1, 0, 2).to(device)
-            targets = targets.float().permute(1, 0, 2).to(device)
-            seq_len = seq_len.to(device)
-
-            output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
-
-            flattened_output = torch.tensor([]).to(device)
-            flattened_target = torch.tensor([]).to(device)
-
-            eval_idx = torch.Tensor().byte().to(device)
-            for idx, seq in enumerate(seq_len):
-                tmp_output = output[:seq, idx, :].reshape(-1, output_size)
-                tmp_target = targets[:seq, idx, :].reshape(-1, output_size)
-                normal_idx = return_normal_idx(tmp_target)
-
-
-                eval_idx = torch.cat([eval_idx, normal_idx], dim=0)
-                flattened_output = torch.cat([flattened_output,tmp_output], dim=0)
-                flattened_target = torch.cat([flattened_target, tmp_target], dim=0)
-
-            sbp_idx, map_idx, under90_idx = eval_idx[:,0], eval_idx[:,1], eval_idx[:,2]
-            target_sbp, target_map, target_under90 = flattened_target[sbp_idx, 0], flattened_target[map_idx, 1], flattened_target[under90_idx,2]
-            output_sbp, output_map, output_under90 = flattened_output[sbp_idx, 0], flattened_output[map_idx, 1], flattened_output[under90_idx,2]
-
-            loss_sbp = criterion(output_sbp, target_sbp)
-            loss_map = criterion(output_map, output_map)
-            loss_under90 = criterion(output_under90, target_under90)
-            loss = loss_sbp + loss_map + loss_under90
-            # total += len(seq_len)
-            running_loss += loss.item()
-
-            pred0 = (F.sigmoid(output_sbp) > threshold).long()  # TODO : threshold
-            pred1 = (F.sigmoid(output_map) > threshold).long()
-            pred2 = (F.sigmoid(output_under90) > threshold).long()
-
-            val_correct0 += (pred0 == flattened_target[:, 0].long()).sum().item()
-            val_correct1 += (pred1 == flattened_target[:, 1].long()).sum().item()
-            val_correct2 += (pred2 == flattened_target[:, 2].long()).sum().item()
-            val_total += len(pred1)
-
-            total_output0 = torch.cat([total_output0, pred0.long()], dim=0)
-            total_output1 = torch.cat([total_output1, pred1.long()], dim=0)
-            total_output2 = torch.cat([total_output2, pred2.long()], dim=0)
-            total_target = torch.cat([total_target, flattened_target], dim=0)
-
-            if i < 100: # 오류는 안 날텐데...
-                save_result_txt(pred0.unsqueeze(-1), targets[:,:, 0].permute(1,0), log_dir+'/txt/', epoch, 'val_sbp', seq_lens=seq_len)
-                save_result_txt(pred1.unsqueeze(-1), targets[:,:, 1].permute(1,0), log_dir+'/txt/', epoch, 'val_map', seq_lens=seq_len)
-                save_result_txt(pred2.unsqueeze(-1), targets[:,:, 2].permute(1,0), log_dir+'/txt/', epoch, 'val_under90', seq_lens=seq_len)
-
-        print("\tEvaluated Loss : {:.4f}".format(running_loss / i), end=' ')
-        print("\tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
-
-    return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
+#TODO: Evaluation method 2 
+# def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
+#     def return_normal_idx(target):
+#         target_shifted = torch.cat([torch.ones(1,3).cuda(), target[1:,:]], dim=0)
+#         normal_idx = target_shifted.byte()
+#         return normal_idx
+#
+#     with torch.no_grad():
+#         running_loss = 0
+#         total = 0
+#         val_correct0, val_correct1, val_correct2 = 0,0,0
+#         val_total = 0
+#
+#         total_output0 = torch.tensor([], dtype=torch.long).to(device)
+#         total_output1 = torch.tensor([], dtype=torch.long).to(device)
+#         total_output2 = torch.tensor([], dtype=torch.long).to(device)
+#         total_target = torch.tensor([]).to(device)
+#
+#
+#         for i, (inputs, (targets, targets_real), seq_len) in enumerate(loader):
+#             inputs = inputs.permute(1, 0, 2).to(device)
+#             targets = targets.float().permute(1, 0, 2).to(device)
+#             seq_len = seq_len.to(device)
+#
+#             output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
+#
+#             flattened_output = torch.tensor([]).to(device)
+#             flattened_target = torch.tensor([]).to(device)
+#
+#             eval_idx = torch.Tensor().byte().to(device)
+#             for idx, seq in enumerate(seq_len):
+#                 tmp_output = output[:seq, idx, :].reshape(-1, output_size)
+#                 tmp_target = targets[:seq, idx, :].reshape(-1, output_size)
+#                 normal_idx = return_normal_idx(tmp_target)
+#
+#
+#                 eval_idx = torch.cat([eval_idx, normal_idx], dim=0)
+#                 flattened_output = torch.cat([flattened_output,tmp_output], dim=0)
+#                 flattened_target = torch.cat([flattened_target, tmp_target], dim=0)
+#
+#             sbp_idx, map_idx, under90_idx = eval_idx[:,0], eval_idx[:,1], eval_idx[:,2]
+#             target_sbp, target_map, target_under90 = flattened_target[sbp_idx, 0], flattened_target[map_idx, 1], flattened_target[under90_idx,2]
+#             output_sbp, output_map, output_under90 = flattened_output[sbp_idx, 0], flattened_output[map_idx, 1], flattened_output[under90_idx,2]
+#
+#             loss_sbp = criterion(output_sbp, target_sbp)
+#             loss_map = criterion(output_map, output_map)
+#             loss_under90 = criterion(output_under90, target_under90)
+#             loss = loss_sbp + loss_map + loss_under90
+#             # total += len(seq_len)
+#             running_loss += loss.item()
+#
+#             pred0 = (F.sigmoid(output_sbp) > threshold).long()  # TODO : threshold
+#             pred1 = (F.sigmoid(output_map) > threshold).long()
+#             pred2 = (F.sigmoid(output_under90) > threshold).long()
+#
+#             val_correct0 += (pred0 == flattened_target[:, 0].long()).sum().item()
+#             val_correct1 += (pred1 == flattened_target[:, 1].long()).sum().item()
+#             val_correct2 += (pred2 == flattened_target[:, 2].long()).sum().item()
+#             val_total += len(pred1)
+#
+#             total_output0 = torch.cat([total_output0, pred0.long()], dim=0)
+#             total_output1 = torch.cat([total_output1, pred1.long()], dim=0)
+#             total_output2 = torch.cat([total_output2, pred2.long()], dim=0)
+#             total_target = torch.cat([total_target, flattened_target], dim=0)
+#
+#             if i < 100: # 오류는 안 날텐데...
+#                 save_result_txt(pred0.unsqueeze(-1), targets[:,:, 0].permute(1,0), log_dir+'/txt/', epoch, 'val_sbp', seq_lens=seq_len)
+#                 save_result_txt(pred1.unsqueeze(-1), targets[:,:, 1].permute(1,0), log_dir+'/txt/', epoch, 'val_map', seq_lens=seq_len)
+#                 save_result_txt(pred2.unsqueeze(-1), targets[:,:, 2].permute(1,0), log_dir+'/txt/', epoch, 'val_under90', seq_lens=seq_len)
+#
+#         print("\tEvaluated Loss : {:.4f}".format(running_loss / i), end=' ')
+#         print("\tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+#
+#     return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
