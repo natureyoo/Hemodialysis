@@ -780,10 +780,12 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
 
             total_target = torch.cat([total_target, targets], dim=0)
             total_output = torch.cat([total_output, output], dim=0)
-
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
+
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, cal_roc=True)
         val_correct0, val_correct1, val_correct2 = 0,0,0
         val_total = len(total_output)
+
         for thres in threshold:
             pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
             pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
@@ -885,6 +887,8 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
         #     save_result_txt(pred0.unsqueeze(-1), targets[:, 0], log_dir+'/txt/', epoch, 'val_sbp')
         #     save_result_txt(pred1.unsqueeze(-1), targets[:, 1], log_dir+'/txt/', epoch, 'val_map')
         #     save_result_txt(pred2.unsqueeze(-1), targets[:, 2], log_dir+'/txt/', epoch, 'val_under90')
+
+        # confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, cal_roc=True) # Saved as dictionaries as datasize varies by columns
         val_total['SBP'] = len(total_target['SBP'])
         val_total['MAP'] = len(total_target['MAP'])
         val_total['Under90'] = len(total_target['Under90'])
@@ -914,62 +918,150 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
                 100 * val_correct2 / val_total['Under90']))
 
 
+def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, cal_roc=True):
+    '''
+    mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
+    data_type : Train / Validation / Test
+    minibatch 별로 저장 될 수 있게 open(,'a')로 했는데, 저장 다 하면 f.close() 권하긴 함.
+    KY: Batch 별로 작동되게 수정하여 f.close() 추가
+    '''
+    category = {'sbp':0, 'map':1 ,'under90':2}
 
+    for key, value in category:
+        f = open('{}/confidence_{}_{}_{}.txt'.format(save_dir, epoch, data_type, key), 'a')
+        for i in range(len(mini_batch_outputs[:,value])):
+            f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
+        
+        if cal_roc :
+            auroc = roc_curve_plot(save_dir, key, data_type, epoch)
+            return auroc
+    f.close()
+
+
+def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, save_dir=None):
+    # calculate the AUROC
+    # f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
+    # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
+
+    conf_and_target_array = np.loadtxt('{}/confidence_{}_{}_{}.txt'.format(load_dir, epoch, data_type, category),
+                                       delimiter=',', dtype=np.str)
+    file_ = np.array(
+        [np.array((float(conf_and_target.split('\t')[0]), float(conf_and_target.split('\t')[1]))) for conf_and_target in
+         conf_and_target_array])
+
+    target_abnormal_idxs_flag = (file_[:, 1] == 1)
+    target_normal_idxs_flag = (file_[:, 1] == 0)
+ 
+    start = np.min(file_[:, 0])
+    end = np.max(file_[:, 0])
+    
+    gap = (end-start) / 20000.
+    end = end+gap
+
+    auroc = 0.0
+    fprTemp = 1.0
+    tpr_list, fpr_list = list(), list()
+    # for delta in np.arange(start, end, gap):
+    for delta in np.arange(start, end, gap):
+        
+        tpr = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
+        fpr = np.sum(file_[target_normal_idxs_flag, 0] > delta) / np.sum(target_normal_idxs_flag)
+        # print(start, end, gap, delta, tpr, fpr)
+        # exit()
+        # f1.write("{}\n".format(tpr))
+        # f2.write("{}\n".format(fpr))
+        tpr_list.append(tpr)
+        fpr_list.append(fpr)
+        auroc += (-fpr + fprTemp) * tpr
+        fprTemp = fpr
+    
+    fig, ax = plt.subplots()
+    ax.plot(fpr_list, tpr_list,  linewidth=3 )
+    ax.axhline(y=1.0, color='black', linestyle='dashed')
+    ax.set_title('ROC {} {}epoch'.format(category, epoch))
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.05)
+    plt.xlabel('FPR(False Positive Rate)')
+    plt.ylabel('TPR(True Positive Rate)')
+    ax.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
+
+    if save_dir is None:    # load dir에 저장
+        ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(load_dir, category, data_type, epoch), dpi=300)
+    else :                  # 다른 dir을 지정하여 저장
+        ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(save_dir, category, data_type, epoch), dpi=300)
+    plt.close("all")
+    return auroc
+
+    
+
+# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/','map', 'Validation', 0)
+
+# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/','sbp', 'Validation', 0)
+
+# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/',
+#     'under90', 'Validation', 0)
+# exit()
 
 #TODO : Test on test dataset with saved model
-def test_rnn_classification(loader, model, device, threshold, log_dir=None):
-    input_size = 143
-    hidden_size = args.hidden_size
-    num_layers = args.rnn_hidden_layers
-    num_epochs = args.max_epoch
-    output_size = 3
-    num_class1 = 1
-    num_class2 = 1
-    num_class3 = 1
-    batch_size = args.batch_size
-    dropout_rate = args.dropout_rate
-    learning_rate = args.lr
-    w_decay = args.weight_decay
-    time = str(datetime.now())[:16].replace(' ', '_')
-    task_type = args.target_type
-    state_path = args.path
+# def test_rnn_classification(loader, model, device, threshold, log_dir=None):
+#     input_size = 143
+#     hidden_size = args.hidden_size
+#     num_layers = args.rnn_hidden_layers
+#     num_epochs = args.max_epoch
+#     output_size = 3
+#     num_class1 = 1
+#     num_class2 = 1
+#     num_class3 = 1
+#     batch_size = args.batch_size
+#     dropout_rate = args.dropout_rate
+#     learning_rate = args.lr
+#     w_decay = args.weight_decay
+#     time = str(datetime.now())[:16].replace(' ', '_')
+#     task_type = args.target_type
+#     state_path = args.path
+#
+#     log_dir = '{}/bs{}_lr{}_wdecay{}/Testset'.format(args.save_result_root, batch_size, learning_rate, w_decay)
+#     utils.make_dir(log_dir)
+#
+#     device = torch.device('cuda')
+#     state = torch.load(state_path)
+#     model = models.RNN_V3(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, num_class1,
+#                           num_class2, num_class3).to(device)
+#     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay, momentum=0.9)
+#
+#     model, optimizer = utils.load_checkpoint(state, model, optimizer)
+#
+#     val_data = torch.load('../data/tensor_data/Interpolation_RNN_60min/Test_60min.pt')
+#     val_seq_len_list = [len(x) for x in val_data]
+#     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
+#     del val_data
+#     print('del val data ok')
+#     val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
+#     val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
+#
+#     import torch.nn as nn
+#     log_dir = 'test'
+#     epoch = 0
+#     BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
+#     thres_list = [0.1, 0.3, 0.5, 0.7, 0.9]
+#     for thres in thres_list:
+#         model.eval()
+#         criterion = BCE_loss_with_logit
+#         val_running_loss, val_size, pred0, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification_v3(
+#             val_loader, model, device, output_size, criterion, num_class1, num_class2, thres, log_dir=log_dir,
+#             epoch=epoch)
+#         sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, flattened_target[:, 0], 2)
+#         map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, flattened_target[:, 1], 2)
+#         under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 2], 2)
+#         utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir + '/{}'.format(thres),
+#                                            epoch, 0, 'val', 'sbp', v3=True)  # v3: version 3 --> sbp/map/under 90
+#         utils.confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(), log_dir + '/{}'.format(thres),
+#                                            epoch, 0, 'val', 'map', v3=True)
+#         utils.confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
+#                                            log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
+# =======
+#         print("\tEvaluated Loss : {:.4f}".format(running_loss / i), end=' ')
+#         print("\tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+#
+#     return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
 
-    log_dir = '{}/bs{}_lr{}_wdecay{}/Testset'.format(args.save_result_root, batch_size, learning_rate, w_decay)
-    utils.make_dir(log_dir)
-
-    device = torch.device('cuda')
-    state = torch.load(state_path)
-    model = models.RNN_V3(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, num_class1,
-                          num_class2, num_class3).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay, momentum=0.9)
-
-    model, optimizer = utils.load_checkpoint(state, model, optimizer)
-
-    val_data = torch.load('../data/tensor_data/Interpolation_RNN_60min/Test_60min.pt')
-    val_seq_len_list = [len(x) for x in val_data]
-    val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
-    del val_data
-    print('del val data ok')
-    val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
-    val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
-
-    import torch.nn as nn
-    log_dir = 'test'
-    epoch = 0
-    BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
-    thres_list = [0.1, 0.3, 0.5, 0.7, 0.9]
-    for thres in thres_list:
-        model.eval()
-        criterion = BCE_loss_with_logit
-        val_running_loss, val_size, pred0, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification_v3(
-            val_loader, model, device, output_size, criterion, num_class1, num_class2, thres, log_dir=log_dir,
-            epoch=epoch)
-        sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, flattened_target[:, 0], 2)
-        map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, flattened_target[:, 1], 2)
-        under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 2], 2)
-        utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir + '/{}'.format(thres),
-                                           epoch, 0, 'val', 'sbp', v3=True)  # v3: version 3 --> sbp/map/under 90
-        utils.confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(), log_dir + '/{}'.format(thres),
-                                           epoch, 0, 'val', 'map', v3=True)
-        utils.confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
