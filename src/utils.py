@@ -781,6 +781,11 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             # total += len(seq_len)
             running_loss += loss.item()
 
+            output_txt_save_for_curve(F.sigmoid(output[:, 0]), targets[:, 0], 'sbp', 'Validation', log_dir, epoch)
+            output_txt_save_for_curve(F.sigmoid(output[:, 1]), targets[:, 1], 'map', 'Validation', log_dir, epoch)
+            output_txt_save_for_curve(F.sigmoid(output[:, 2]), targets[:, 2], 'under90', 'Validation', log_dir, epoch)
+            exit()
+
             pred0 = (F.sigmoid(output[:,0]) > threshold).long()  # TODO : threshold
             pred1 = (F.sigmoid(output[:,1]) > threshold).long()
             pred2 = (F.sigmoid(output[:,2]) > threshold).long()
@@ -803,6 +808,58 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
         print("\tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
 
     return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
+
+
+def output_txt_save_for_curve(mini_batch_outputs, mini_batch_targets, category, data_type, save_dir, epoch=9999):
+    '''
+    mini_batch_outputs shape : (개수) -> flattend_output[:,0]
+    category : sbp / map / under90
+    data_type : Train / Validation / Test
+    minibatch 별로 저장 될 수 있게 open(,'a')로 했는데, 저장 다 하면 f.close() 권하긴 함.
+    '''
+    f = open('{}/confidence_{}_{}_{}.txt'.format(save_dir, epoch, data_type, category), 'a')
+
+    for i in range(len(mini_batch_outputs)):
+        f.write("{}\t{}\n".format(mini_batch_outputs[i].item(), mini_batch_targets[i].item()))
+
+
+def roc(load_dir, category='sbp', data_type='Validation', epoch=None):
+    # calculate the AUROC
+    f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
+    f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
+
+    conf_and_target_array = np.loadtxt('{}/confidence_{}_{}_{}.txt'.format(load_dir, epoch, data_type, category),
+                                       delimiter=',', dtype=np.str)
+    file_ = np.array(
+        [np.array((float(conf_and_target.split('\t')[0]), float(conf_and_target.split('\t')[1]))) for conf_and_target in
+         conf_and_target_array])
+
+    target_abnormal_idxs_flag = (file_[:, 1] == 1)
+    target_normal_idxs_flag = (file_[:, 1] == 0)
+    print(len(file_))
+    print(np.sum(target_abnormal_idxs_flag))
+    print(np.sum(target_normal_idxs_flag))
+    start = np.min(file_[:, 0])
+    end = np.max(file_[:, 0])
+    gap = -1e-4
+    auroc = 0.0
+    fprTemp = 0
+    for delta in np.arange(end, start, gap):
+        tpr = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
+        fpr = np.sum(file_[target_normal_idxs_flag, 0] >= delta) / np.sum(target_normal_idxs_flag)
+        f1.write("{}\n".format(tpr))
+        f2.write("{}\n".format(fpr))
+        auroc += (fpr - fprTemp) * tpr
+        fprTemp = fpr
+    print(auroc)
+    return auroc
+
+roc('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Nov15_144907/bs16_lr0.001_wdecay5e-06','sbp', 'Validation', 0)
+roc('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Nov15_144907/bs16_lr0.001_wdecay5e-06',
+    'map', 'Validation', 0)
+roc('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Nov15_144907/bs16_lr0.001_wdecay5e-06',
+    'under90', 'Validation', 0)
+exit()
 
 
 #TODO: Evaluation method 2 
