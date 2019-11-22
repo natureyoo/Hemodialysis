@@ -3,18 +3,13 @@ from models import *
 from torch.utils.data import DataLoader
 import torch.nn.utils.rnn as rnn_utils
 import torch.nn as nn
-import numpy as np
+import torch.nn.functional as F
 import loader
 import utils
 import argparse
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
-import numpy.random as random
-import sampler
-import os
-
 import sys
-# from csv_parser import HemodialysisDataset
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Prediction Blood Pressure during Hemodialysis using Deep Learning model')
@@ -93,32 +88,28 @@ def rnn_classification(args):
     #####################################################
     train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train1_60min.pt')
     train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train2_60min.pt')], axis=0)
+    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
+    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
+
     # train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
     # feature selection, manually.
     for i in range(len(train_data)):
         train_data[i] = train_data[i][:,1:] # remove masking
-        # train_data[i] = np.concatenate((train_data[i][:,:3], train_data[i][:,4:10],train_data[i][:,12:18], train_data[i][:,24:39], train_data[i][:,-14:-7], train_data[i][:,-6:]), axis=1)
     ori_len = len(train_data)
-
+    # Cut data by some rule
+    #
     train_seq_len_list = [len(x) for x in train_data]
-
-    train_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in train_data])
     print("num train data : {} --> {}".format(ori_len, len(train_data)))
-    del train_data
-    print('del train data ok')
-    train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=task_type, ntime=60)
-    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+    train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
+    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=loader.pad_collate)
 
     val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Validation_60min.pt')
-    # val_data = val_data[:int(len(val_data) * 0.1)]
-
+    val_data = val_data[:int(len(val_data) * 0.1)]
     val_seq_len_list = [len(x) for x in val_data]
-    val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
-    del val_data
-    print('del val data ok')
-    val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
-    val_loader = DataLoader(dataset=val_data, batch_size=64, shuffle=False)
+    val_dataset = loader.RNN_Val_Dataset((val_data, val_seq_len_list), type=task_type, ntime=60)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
+                            collate_fn=lambda batch: loader.pad_collate(batch, True))
 
     BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
 
@@ -144,8 +135,8 @@ def rnn_classification(args):
                 param_group['lr'] *= args.lr_decay_rate
                 print('lr : {:.8f} --> {:.8f}'.format(param_group['lr']/args.lr_decay_rate, param_group['lr']))
         
-        ##################################
-        # eval ###########################
+        # ##################################
+        # # eval ###########################
         threshold = [0.1, 0.3, 0.5, 0.7, 0.9]
         model.eval()
         criterion = BCE_loss_with_logit
@@ -154,8 +145,8 @@ def rnn_classification(args):
         # 저장 : 매 epoch마다 하는데, 특정 epoch마다 하게 바꾸려면, epoch % args.print_freq == 0 등으로 추가
         state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
         torch.save(state, log_dir+'/{}epoch.model'.format(epoch))
-        # eval ###########################
-        ##################################
+        # # eval ###########################
+        # ##################################
 
 
         model.train()
@@ -165,12 +156,10 @@ def rnn_classification(args):
         total = 0
         train_total, train_correct_sbp,train_correct_map, train_correct_under_90, train_correct_sbp2, train_correct_map2  = 0,0,0,0,0,0
         for batch_idx, (inputs, (targets, targets_real), seq_len) in enumerate(train_loader):
-            inputs = inputs.permute(1,0,2).to(device)
-            targets = targets.float().permute(1,0,2).to(device)
-            seq_len = seq_len.to(device)
-
+            inputs = inputs.to(device)
+            targets = targets.float().to(device)
+            seq_len = torch.LongTensor(seq_len).to(device)
             output = model(inputs, seq_len, device) # shape : (seq_len, batch size, 5)
-
 
             flattened_output = torch.tensor([]).to(device)
             flattened_target = torch.tensor([]).to(device)

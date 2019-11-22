@@ -769,12 +769,12 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
         total_target = torch.tensor([]).to(device)
 
         for i, (inputs, (targets, targets_real), seq_len, mask) in enumerate(loader):
-            batch_size, padded_len, feature_len = inputs.shape[0], inputs.shape[1], inputs.shape[2]
-            inputs = inputs.permute(1, 0, 2).to(device)
-            targets = targets_real.float().permute(1, 0, 2).to(device)
+            # batch_size, padded_len, feature_len = inputs.shape[0], inputs.shape[1], inputs.shape[2]
+            inputs = inputs.to(device)
+            targets = targets_real.float().to(device)
             output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
 
-            mask = mask.byte().view(padded_len,batch_size).to(device)
+            mask = mask.byte().to(device)
             mask = mask.unsqueeze(-1).repeat(1,1,5)
 
             output = torch.masked_select(output, mask).view(-1,5)
@@ -787,7 +787,6 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             loss_map2 = criterion(output[:,4], targets[:,4])
 
             loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
-            # total += len(seq_len)
             running_loss += loss.item()
 
             total_target = torch.cat([total_target, targets], dim=0)
@@ -838,7 +837,7 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
                                                                                         100 * val_correct4 / val_total))
 
 
-# TODO: Evaluation method 2
+# TODO: Edit for batch-wise padding
 def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
     mean_HD_ctime = 112.71313384332716
     std_HD_ctime = 78.88638128125473
@@ -950,13 +949,13 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     minibatch 별로 저장 될 수 있게 open(,'a')로 했는데, 저장 다 하면 f.close() 권하긴 함.
     KY: Batch 별로 작동되게 수정하여 f.close() 추가
     '''
+    print("Making roc curve...")
     save_dir += '/auroc'
     category = {'sbp':0, 'map':1 ,'under90':2, 'sbp2':3, 'map2':4}
     for key, value in category.items():
         key_dir = save_dir + '/' + key
         if not os.path.isdir(key_dir):
             os.makedirs(key_dir)
-        print("Making {} roc curve".format(key))
         f = open('{}/confidence_{}_{}_{}.txt'.format(key_dir, epoch, data_type, key), 'w')
         for i in range(len(mini_batch_outputs[:,value])):
             f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
