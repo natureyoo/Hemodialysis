@@ -692,13 +692,12 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
     # 각 frame의 c_time, sbp, map를 받았음. 
     # <<<<중요>>>>> 7,12,13은 data 형태에 따라서 바꿔줘야 함
 
-
     for data_idx in range(len(data)):
         if data_idx == 1000:
             print('{}_{}'.format(d_type, data_idx))
         sbp_absolute_value = sbp_list[data_idx]
+        map_absolute_value = map_list[data_idx]
         sbp_init_value = sbp_list[data_idx][0]
-        dbp_init_value = data[data_idx][0,13]*std_VS_dbp+mean_VS_dbp
         map_init_value = map_list[data_idx][0]
         dbp_init_value = data[data_idx][0,13] * std_VS_dbp + mean_VS_dbp
         sbp_diff = sbp_absolute_value - sbp_init_value
@@ -716,9 +715,19 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
         # print('sbp_diff[{}]:'.format(data_idx), sbp_diff)
         # print('map_diff[{}]:'.format(data_idx), map_diff)
 
-        temp_data_concat = np.zeros((len(sbp_diff), 6))
+        temp_data_concat = np.zeros((len(sbp_diff), 10))
         for frame_idx in range(len(data[data_idx])):
             criterion_flag = (c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx]) # shape : [True, True, True, True, False, False, False, ....]
+
+            if np.sum(((sbp_absolute_value[criterion_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_sbp_exist = 1
+            else : curr_sbp_exist = 0
+            if np.sum(((map_absolute_value[criterion_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_map_exist = 1
+            else : curr_map_exist = 0
+
+            if np.sum(((sbp_absolute_value[criterion_flag & real_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_real_sbp_exist = 1
+            else : curr_real_sbp_exist = 0
+            if np.sum(((map_absolute_value[criterion_flag & real_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_real_map_exist = 1
+            else : curr_real_map_exist = 0
 
             if np.sum((sbp_diff[criterion_flag]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
             else : sbp_exist = 0
@@ -744,10 +753,10 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
                 if last_target_sbp <= -90 : sbp_under_90 = 1
                 else: sbp_under_90 = 0
 
-            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90))
+            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90, curr_sbp_exist, curr_map_exist, curr_real_sbp_exist, curr_real_map_exist))
         data[data_idx] = np.concatenate((data[data_idx], temp_data_concat), axis=1)
 
-    torch.save(data, '../data/tensor_data/Interpolation_RNN_60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
+    torch.save(data, 'data/tensor_data/Interpolation_RNN_60min/New/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
 
 # version3 용 eval.
 def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
@@ -766,15 +775,18 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
 
             mask = mask.byte().view(padded_len,batch_size).to(device)
-            mask = mask.unsqueeze(-1).repeat(1,1,3)
+            mask = mask.unsqueeze(-1).repeat(1,1,5)
 
-            output = torch.masked_select(output, mask).view(-1,3)
-            targets = torch.masked_select(targets, mask).view(-1,3)
+            output = torch.masked_select(output, mask).view(-1,5)
+            targets = torch.masked_select(targets, mask).view(-1,5)
 
             loss_sbp = criterion(output[:,0], targets[:,0])
             loss_map = criterion(output[:,1], targets[:,1])
             loss_under90 = criterion(output[:,2], targets[:,2])
-            loss = loss_sbp + loss_map + loss_under90
+            loss_sbp2 = criterion(output[:,3], targets[:,3])
+            loss_map2 = criterion(output[:,4], targets[:,4])
+
+            loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
             # total += len(seq_len)
             running_loss += loss.item()
 
@@ -783,21 +795,28 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
 
         confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, cal_roc=True)
-        val_correct0, val_correct1, val_correct2 = 0,0,0
         val_total = len(total_output)
 
         for thres in threshold:
+            val_correct0, val_correct1, val_correct2, val_correct3, val_correct4 = 0, 0, 0, 0, 0
+
             pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
             pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
             pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
+            pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
+            pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
 
             val_correct0 += (pred0 == total_target[:,0].long()).sum().item()
-            val_correct1 += (pred0 == total_target[:,1].long()).sum().item()
-            val_correct2 += (pred0 == total_target[:,2].long()).sum().item()
+            val_correct1 += (pred1 == total_target[:,1].long()).sum().item()
+            val_correct2 += (pred2 == total_target[:,2].long()).sum().item()
+            val_correct3 += (pred3 == total_target[:,3].long()).sum().item()
+            val_correct4 += (pred4 == total_target[:,4].long()).sum().item()
 
             sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, total_target[:,0], 2)
             map_confusion_matrix, dbp_log = confusion_matrix(pred1, total_target[:, 1], 2)
             under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_target[:, 2], 2)
+            sbp2_confusion_matrix, dbp_log = confusion_matrix(pred3, total_target[:, 3], 2)
+            map2_confusion_matrix, dbp_log = confusion_matrix(pred4, total_target[:, 4], 2)
             confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
                                                log_dir + '/{}'.format(thres),
                                                epoch, 0, 'val', 'sbp', v3=True)
@@ -806,11 +825,17 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
                                                epoch, 0, 'val', 'map', v3=True)
             confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
                                                log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
+            confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, 0, 'val', 'sbp2', v3=True)
+            confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, 0, 'val', 'map2', v3=True)
 
 
-            print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(thres, 100 * val_correct0 / val_total,
+            print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(thres, 100 * val_correct0 / val_total,
                                                                                         100 * val_correct1 / val_total,
-                                                                                        100 * val_correct2 / val_total))
+                                                                                        100 * val_correct2 / val_total,
+                                                                                        100 * val_correct3 / val_total,
+                                                                                        100 * val_correct4 / val_total))
 
 
 # TODO: Evaluation method 2
@@ -925,17 +950,21 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     minibatch 별로 저장 될 수 있게 open(,'a')로 했는데, 저장 다 하면 f.close() 권하긴 함.
     KY: Batch 별로 작동되게 수정하여 f.close() 추가
     '''
-    category = {'sbp':0, 'map':1 ,'under90':2}
-
-    for key, value in category:
-        f = open('{}/confidence_{}_{}_{}.txt'.format(save_dir, epoch, data_type, key), 'a')
+    save_dir += '/auroc'
+    category = {'sbp':0, 'map':1 ,'under90':2, 'sbp2':3, 'map2':4}
+    for key, value in category.items():
+        key_dir = save_dir + '/' + key
+        if not os.path.isdir(key_dir):
+            os.makedirs(key_dir)
+        print("Making {} roc curve".format(key))
+        f = open('{}/confidence_{}_{}_{}.txt'.format(key_dir, epoch, data_type, key), 'w')
         for i in range(len(mini_batch_outputs[:,value])):
             f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
-        
+        f.close()
         if cal_roc :
-            auroc = roc_curve_plot(save_dir, key, data_type, epoch)
-            return auroc
-    f.close()
+            auroc = roc_curve_plot(key_dir, key, data_type, epoch)
+
+
 
 
 def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, save_dir=None):
@@ -1001,67 +1030,4 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
 # roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/',
 #     'under90', 'Validation', 0)
 # exit()
-
-#TODO : Test on test dataset with saved model
-# def test_rnn_classification(loader, model, device, threshold, log_dir=None):
-#     input_size = 143
-#     hidden_size = args.hidden_size
-#     num_layers = args.rnn_hidden_layers
-#     num_epochs = args.max_epoch
-#     output_size = 3
-#     num_class1 = 1
-#     num_class2 = 1
-#     num_class3 = 1
-#     batch_size = args.batch_size
-#     dropout_rate = args.dropout_rate
-#     learning_rate = args.lr
-#     w_decay = args.weight_decay
-#     time = str(datetime.now())[:16].replace(' ', '_')
-#     task_type = args.target_type
-#     state_path = args.path
-#
-#     log_dir = '{}/bs{}_lr{}_wdecay{}/Testset'.format(args.save_result_root, batch_size, learning_rate, w_decay)
-#     utils.make_dir(log_dir)
-#
-#     device = torch.device('cuda')
-#     state = torch.load(state_path)
-#     model = models.RNN_V3(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, num_class1,
-#                           num_class2, num_class3).to(device)
-#     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay, momentum=0.9)
-#
-#     model, optimizer = utils.load_checkpoint(state, model, optimizer)
-#
-#     val_data = torch.load('../data/tensor_data/Interpolation_RNN_60min/Test_60min.pt')
-#     val_seq_len_list = [len(x) for x in val_data]
-#     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
-#     del val_data
-#     print('del val data ok')
-#     val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
-#     val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=False)
-#
-#     import torch.nn as nn
-#     log_dir = 'test'
-#     epoch = 0
-#     BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
-#     thres_list = [0.1, 0.3, 0.5, 0.7, 0.9]
-#     for thres in thres_list:
-#         model.eval()
-#         criterion = BCE_loss_with_logit
-#         val_running_loss, val_size, pred0, pred1, pred2, flattened_target, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification_v3(
-#             val_loader, model, device, output_size, criterion, num_class1, num_class2, thres, log_dir=log_dir,
-#             epoch=epoch)
-#         sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, flattened_target[:, 0], 2)
-#         map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, flattened_target[:, 1], 2)
-#         under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, flattened_target[:, 2], 2)
-#         utils.confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(), log_dir + '/{}'.format(thres),
-#                                            epoch, 0, 'val', 'sbp', v3=True)  # v3: version 3 --> sbp/map/under 90
-#         utils.confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(), log_dir + '/{}'.format(thres),
-#                                            epoch, 0, 'val', 'map', v3=True)
-#         utils.confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-#                                            log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
-# =======
-#         print("\tEvaluated Loss : {:.4f}".format(running_loss / i), end=' ')
-#         print("\tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
-#
-#     return running_loss/i, i, total_output0, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
 

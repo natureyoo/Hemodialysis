@@ -298,6 +298,8 @@ class RNN_V3(nn.Module):
         self.output_size = output_size
         self.batch_size = batch_size
         self.dropout_rate = dropout_rate
+        self.temp_logit = None
+        self.temp_logit2 = None
 
         total_num_class = sbp_num_class + map_num_class + another_class
         # self.fc_before_rnn = nn.Sequential(nn.Linear(input_size, input_size), nn.Tanh(), nn.Linear(input_size, input_size))
@@ -324,7 +326,7 @@ class RNN_V3(nn.Module):
         self.fc_class = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
             nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), 
             nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), 
-            nn.Linear(hidden_size, total_num_class))
+            nn.Linear(hidden_size, output_size))
             
         for m in [self.fc_class,self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_before_rnn] :
             if isinstance(m, nn.BatchNorm1d):

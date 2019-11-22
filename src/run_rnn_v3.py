@@ -59,7 +59,7 @@ def rnn_classification(args):
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
     num_epochs = args.max_epoch
-    output_size = 3
+    output_size = 5
     num_class1 = 1
     num_class2 = 1
     num_class3 = 1
@@ -91,9 +91,9 @@ def rnn_classification(args):
     # model.load_state_dict(state['model'])
     # load###############################################
     #####################################################
-
-    train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Train1_60min.pt')
-    train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
+    train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train1_60min.pt')
+    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train2_60min.pt')], axis=0)
+    # train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
     # feature selection, manually.
     for i in range(len(train_data)):
@@ -110,12 +110,8 @@ def rnn_classification(args):
     train_data = loader.RNN_Dataset((train_padded, train_seq_len_list), type=task_type, ntime=60)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
-    val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/Validation_60min.pt')
-    val_data = val_data[:int(len(val_data) * 0.1)]
-    # mask = torch.Tensor().to(device)
-    # for i in range(len(val_data)):
-    #     # mask = torch.cat([mask, torch.Tensor(val_data[i][:,1]).to(device)], dim=0)
-    #     val_data[i] = np.concatenate((val_data[i][:,:3], val_data[i][:,4:10],val_data[i][:,12:18], val_data[i][:,24:39],val_data[i][:,-14:-7], val_data[i][:,-6:]), axis=1)
+    val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Validation_60min.pt')
+    # val_data = val_data[:int(len(val_data) * 0.1)]
 
     val_seq_len_list = [len(x) for x in val_data]
     val_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in val_data])
@@ -124,14 +120,8 @@ def rnn_classification(args):
     val_data = loader.RNN_Val_Dataset((val_padded, val_seq_len_list), type=task_type, ntime=60)
     val_loader = DataLoader(dataset=val_data, batch_size=64, shuffle=False)
 
-    # criterion1 = nn.CrossEntropyLoss(weight=weight1).to(device)
-    # criterion2 = nn.CrossEntropyLoss(weight=weight2).to(device)
     BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
 
-    # criterion_sbp_KLD = nn.KLDivLoss().to(device) # soft-labeling으로, class간에 거리 개념을 도입하고자 했었음
-    # criterion_dbp_KLD = nn.KLDivLoss().to(device)
-    
-    
     if args.optim == 'SGD':
         optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay, momentum=0.9)
         # , momentum=0.9
@@ -159,7 +149,7 @@ def rnn_classification(args):
         threshold = [0.1, 0.3, 0.5, 0.7, 0.9]
         model.eval()
         criterion = BCE_loss_with_logit
-        utils.eval_rnn_classification_v3_m2(val_loader, model, device, output_size, criterion, num_class1, num_class2, threshold, log_dir=log_dir, epoch=epoch)
+        utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, threshold, log_dir=log_dir, epoch=epoch)
 
         # 저장 : 매 epoch마다 하는데, 특정 epoch마다 하게 바꾸려면, epoch % args.print_freq == 0 등으로 추가
         state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
@@ -170,16 +160,16 @@ def rnn_classification(args):
 
         model.train()
 
-        running_loss, running_loss_sbp, running_loss_map, running_loss_under90= 0,0,0,0
+        running_loss, running_loss_sbp, running_loss_map, running_loss_under90, running_loss_sbp2, running_loss_map2 = 0,0,0,0,0,0
         
         total = 0
-        train_total, train_correct_sbp,train_correct_map, train_correct_under_90 = 0,0,0,0
+        train_total, train_correct_sbp,train_correct_map, train_correct_under_90, train_correct_sbp2, train_correct_map2  = 0,0,0,0,0,0
         for batch_idx, (inputs, (targets, targets_real), seq_len) in enumerate(train_loader):
             inputs = inputs.permute(1,0,2).to(device)
             targets = targets.float().permute(1,0,2).to(device)
             seq_len = seq_len.to(device)
 
-            output = model(inputs, seq_len, device) # shape : (seq_len, batch size, 3) 
+            output = model(inputs, seq_len, device) # shape : (seq_len, batch size, 5)
 
 
             flattened_output = torch.tensor([]).to(device)
@@ -192,6 +182,8 @@ def rnn_classification(args):
             loss_sbp = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
             loss_map = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
             loss_under90 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
+            loss_sbp2 = BCE_loss_with_logit(flattened_output[:,3], flattened_target[:,3])
+            loss_map2 = BCE_loss_with_logit(flattened_output[:, 4], flattened_target[:, 4])
             
             # print('\n', F.sigmoid(flattened_target[0,0]).item(),  F.sigmoid(flattened_target[0,1]).item(),  F.sigmoid(flattened_target[0,2]).item())
 
@@ -199,10 +191,13 @@ def rnn_classification(args):
             #     utils.save_result_txt(torch.argmax(output1.permute(1,0,2), dim=2), targets[:,:, 0].permute(1,0), log_dir+'/txt/', epoch, 'Train_sbp', seq_lens=seq_len)
             #     utils.save_result_txt(torch.argmax(output2.permute(1,0,2), dim=2), targets[:,:, 1].permute(1,0), log_dir+'/txt/', epoch, 'Train_dbp', seq_lens=seq_len)
             
-            loss = loss_sbp + loss_map + loss_under90
+            loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
+
             running_loss_sbp = loss_sbp.item() * (1./(batch_idx+1.)) + running_loss_sbp * (batch_idx/(batch_idx+1.))
             running_loss_map = loss_map.item() * (1./(batch_idx+1.)) + running_loss_map * (batch_idx/(batch_idx+1.))
             running_loss_under90 = loss_under90.item() * (1./(batch_idx+1.)) + running_loss_under90 * (batch_idx/(batch_idx+1.))
+            running_loss_sbp2 = loss_sbp2.item() * (1./(batch_idx+1.)) + running_loss_sbp2 * (batch_idx/(batch_idx+1.))
+            running_loss_map2 = loss_map2.item() * (1./(batch_idx+1.)) + running_loss_map2 * (batch_idx/(batch_idx+1.))
             total += len(seq_len)
 
             # for param in model.parameters():
@@ -211,32 +206,36 @@ def rnn_classification(args):
             running_loss = loss.item() * (1./(batch_idx+1.)) + running_loss * (batch_idx/(batch_idx+1.))
 
             pred0 = (F.sigmoid(flattened_output[:,0]) > 0.5).long()  # output : 1 or 0 --> 1: abnormal / 0: normal
-            pred1 = (F.sigmoid(flattened_output[:,1]) > 0.5).long() # TODO : 0.5 --> args.threshold
+            pred1 = (F.sigmoid(flattened_output[:,1]) > 0.5).long()
             pred2 = (F.sigmoid(flattened_output[:,2]) > 0.5).long()
+            pred3 = (F.sigmoid(flattened_output[:,3]) > 0.5).long()
+            pred4 = (F.sigmoid(flattened_output[:,4]) > 0.5).long()
             
             train_correct_sbp += (pred0 == flattened_target[:, 0].long()).sum().item() 
             train_correct_map += (pred1 == flattened_target[:, 1].long()).sum().item()
             train_correct_under_90 += (pred2 == flattened_target[:, 2].long()).sum().item()
+            train_correct_sbp2 += (pred3 == flattened_target[:, 3].long()).sum().item()
+            train_correct_map2 += (pred4 == flattened_target[:, 4].long()).sum().item()
             train_total += len(pred1)
 
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm(model.parameters(), 3)        # gradient exploding 을 막아주기 위한 작위적인 방법 TODO : 여기 붙여주는게 맞나...
+            torch.nn.utils.clip_grad_norm(model.parameters(), 3)
             optimizer.step()
 
             # if (batch_idx + 1) % args.train_print_freq == 0:
             if epoch < 5:       # 5 epoch 까지는 실시간으로 loss & acc를 보겠다.
                 sys.stdout.write('\r')
-                sys.stdout.write('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f}\t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f}'
+                sys.stdout.write('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f}\t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f} SBP2 acc.: {:.4f}  MAP2 acc.: {:.4}'
                     .format(epoch, num_epochs, batch_idx + 1, total_step, \
-                            running_loss_sbp, running_loss_map, running_loss_under90, train_correct_sbp/train_total, train_correct_map/train_total, train_correct_under_90/train_total))
+                            running_loss_sbp, running_loss_map, running_loss_under90, train_correct_sbp/train_total, train_correct_map/train_total, train_correct_under_90/train_total, train_correct_sbp2/train_total, train_correct_map2/train_total))
 
                 sys.stdout.flush()
             else:
                 if batch_idx+1 == len(train_loader) :
-                    print('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f}\t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f}'
+                    print('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f}\t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f} SBP2 acc.: {:.4f}  MAP2 acc.: {:.4}'
                     .format(epoch, num_epochs, batch_idx + 1, total_step, \
-                            running_loss_sbp, running_loss_map, running_loss_under90, train_correct_sbp/train_total, train_correct_map/train_total, train_correct_under_90/train_total))
+                            running_loss_sbp, running_loss_map, running_loss_under90, train_correct_sbp/train_total, train_correct_map/train_total, train_correct_under_90/train_total, train_correct_sbp2/train_total, train_correct_map2/train_total))
 
     del train_loader, val_loader, train_padded, val_padded
     model.eval()
