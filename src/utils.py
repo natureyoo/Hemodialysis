@@ -12,9 +12,6 @@ import shutil
 import matplotlib.pyplot as plt
 import json
 import random
-from functools import wraps
-
-PROF_DATA = {}
 
 def copy_file(src_path, dst_dir):
     if not os.path.isdir(dst_dir):
@@ -33,35 +30,6 @@ def copy_dir(src, dst, symlinks=False, ignore=None):
             shutil.copytree(s, d, symlinks, ignore)
         else:
             shutil.copy2(s, d)
-
-def profile(fn):
-    @wraps(fn)
-    def with_profiling(*args, **kwargs):
-        start_time = time.time()
-
-        ret = fn(*args, **kwargs)
-
-        elapsed_time = time.time() - start_time
-
-        if fn.__name__ not in PROF_DATA:
-            PROF_DATA[fn.__name__] = [0, []]
-        PROF_DATA[fn.__name__][0] += 1
-        PROF_DATA[fn.__name__][1].append(elapsed_time)
-
-        return ret
-
-    return with_profiling
-
-def print_prof_data():
-    for fname, data in PROF_DATA.items():
-        max_time = max(data[1])
-        avg_time = sum(data[1]) / len(data[1])
-        print("Function %s called %d times. " % (fname, data[0]),)
-        print('Execution time max: %.3f, average: %.3f' % (max_time, avg_time))
-
-def clear_prof_data():
-    global PROF_DATA
-    PROF_DATA = {}
 
 def save_snapshot(model, optimizer, snapshot_dir, epoch, iteration, snapshot_epoch_fre):
     if epoch % snapshot_epoch_fre == 0:
@@ -788,9 +756,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
     torch.save(data, 'data/tensor_data/Interpolation_RNN_60min/New/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
 
 # version3 용 eval.
-@profile
 def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None, step=0):
-    print('[TIMER] Starting Evaluation', print_prof_data())
     with torch.no_grad():
         running_loss = 0
         total_output = torch.tensor([], dtype=torch.float).to(device)
@@ -820,9 +786,7 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             total_target = torch.cat([total_target, targets], dim=0)
             total_output = torch.cat([total_output, output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
-        print('[TIMER] Starting confidence_save_and_cal_auroc ', print_prof_data())
         confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, cal_roc=True)
-        print('[TIMER] Ending confidence_save_and_cal_auroc ', print_prof_data())
 
         val_total = len(total_output)
 
@@ -991,9 +955,7 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
             f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
         f.close()
         if cal_roc :
-            print('[TIMER] Starting roc_curve_plot ', print_prof_data())
             auroc = roc_curve_plot(key_dir, key, data_type, epoch, step)
-            print('[TIMER] Ending roc_curve_plot ', print_prof_data())
 
 
 def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, step= 0, save_dir=None):

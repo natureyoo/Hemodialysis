@@ -87,10 +87,10 @@ def rnn_classification(args):
     # load###############################################
     #####################################################
     train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train1_60min.pt')
-    # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train2_60min.pt')], axis=0)
+    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train2_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
-    train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
+    # train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
     # feature selection, manually.
     for i in range(len(train_data)):
@@ -104,7 +104,7 @@ def rnn_classification(args):
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=loader.pad_collate)
 
     val_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Validation_60min.pt')
-    val_data = val_data[:int(len(val_data) * 0.1)]
+    # val_data = val_data[:int(len(val_data) * 0.1)]
     val_seq_len_list = [len(x) for x in val_data]
     val_dataset = loader.RNN_Val_Dataset((val_data, val_seq_len_list), type=task_type, ntime=60)
     val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
