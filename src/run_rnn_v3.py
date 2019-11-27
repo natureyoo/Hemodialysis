@@ -87,18 +87,17 @@ def rnn_classification(args):
     # load###############################################
     #####################################################
     train_data = torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train1_60min.pt')
-    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train2_60min.pt')], axis=0)
-    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
-    train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
-
-    # train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
+    # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train2_60min.pt')], axis=0)
+    # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
+    # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
+    train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
     # feature selection, manually.
     for i in range(len(train_data)):
         train_data[i] = train_data[i][:,1:] # remove masking
     ori_len = len(train_data)
     # Cut data by some rule
-    #
+
     train_seq_len_list = [len(x) for x in train_data]
     print("num train data : {} --> {}".format(ori_len, len(train_data)))
     train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
@@ -137,7 +136,7 @@ def rnn_classification(args):
         
         # ##################################
         # # eval ###########################
-        threshold = [0.1, 0.3, 0.5, 0.7, 0.9]
+        threshold = [0.1, 0.3, 0.5]
         model.eval()
         criterion = BCE_loss_with_logit
         utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, threshold, log_dir=log_dir, epoch=epoch)
@@ -180,7 +179,7 @@ def rnn_classification(args):
             #     utils.save_result_txt(torch.argmax(output1.permute(1,0,2), dim=2), targets[:,:, 0].permute(1,0), log_dir+'/txt/', epoch, 'Train_sbp', seq_lens=seq_len)
             #     utils.save_result_txt(torch.argmax(output2.permute(1,0,2), dim=2), targets[:,:, 1].permute(1,0), log_dir+'/txt/', epoch, 'Train_dbp', seq_lens=seq_len)
             
-            loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
+            loss = loss_sbp+ loss_map + loss_under90 + loss_sbp2 + loss_map2
 
             running_loss_sbp = loss_sbp.item() * (1./(batch_idx+1.)) + running_loss_sbp * (batch_idx/(batch_idx+1.))
             running_loss_map = loss_map.item() * (1./(batch_idx+1.)) + running_loss_map * (batch_idx/(batch_idx+1.))
@@ -212,6 +211,11 @@ def rnn_classification(args):
             torch.nn.utils.clip_grad_norm(model.parameters(), 3)
             optimizer.step()
 
+            if (batch_idx + 1) % args.valid_iter_freq == 0:
+                threshold = [0.1, 0.3, 0.5]
+                model.eval()
+                criterion = BCE_loss_with_logit
+                utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, threshold, log_dir=log_dir, epoch=epoch, step=batch_idx+1)
             # if (batch_idx + 1) % args.train_print_freq == 0:
             if epoch < 5:       # 5 epoch 까지는 실시간으로 loss & acc를 보겠다.
                 sys.stdout.write('\r')

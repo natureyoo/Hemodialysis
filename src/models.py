@@ -323,12 +323,32 @@ class RNN_V3(nn.Module):
         self.layer_norm_3 = nn.LayerNorm(hidden_size)
         self.inter_fc_4 = nn.Sequential(nn.Linear(hidden_size,input_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(input_size, input_size))
 
-        self.fc_class = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+        self.fc_class1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
             nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), 
-            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), 
-            nn.Linear(hidden_size, output_size))
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+
+        self.fc_class2 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+
+        self.fc_class3 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+
+        self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+
+        self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
             
-        for m in [self.fc_class,self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_before_rnn] :
+        for m in [self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_before_rnn] :
             if isinstance(m, nn.BatchNorm1d):
                 if m.weight is not None:
                     m.weight.data.normal_(0.0, 0.02)
@@ -357,7 +377,7 @@ class RNN_V3(nn.Module):
         seq_len : list --> e.g. [7,4,5,6,7,11]
         len(seq_len) == batch size
 
-        output shape : (seq, batch size, 3)
+        output shape : (seq, batch size, 5)
         '''
         h1, h2, h3, h4 = None, None, None, None
         X = X.float()
@@ -391,8 +411,14 @@ class RNN_V3(nn.Module):
             outputs.append(h_prop)
             
         outputs = torch.stack(outputs)  # list 를 torch.Tensor로 만들기 위해
-        outputs = self.fc_class(outputs)
-        return outputs
+
+        output1 = self.fc_class1(outputs)
+        output2 = self.fc_class2(outputs)
+        output3 = self.fc_class3(outputs)
+        output4 = self.fc_class4(outputs)
+        output5 = self.fc_class5(outputs)
+
+        return torch.cat([output1, output2, output3, output4, output5], dim=-1)
 
     def init_hidden(self):
         hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)

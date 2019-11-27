@@ -12,9 +12,9 @@ import shutil
 import matplotlib.pyplot as plt
 import json
 import random
+from functools import wraps
 
-targets_list = ['VS_sbp_target', 'VS_dbp_target', 'clas_target']
-id_features = ['ID_hd', 'ID_timeline', 'ID_class']
+PROF_DATA = {}
 
 def copy_file(src_path, dst_dir):
     if not os.path.isdir(dst_dir):
@@ -33,6 +33,35 @@ def copy_dir(src, dst, symlinks=False, ignore=None):
             shutil.copytree(s, d, symlinks, ignore)
         else:
             shutil.copy2(s, d)
+
+def profile(fn):
+    @wraps(fn)
+    def with_profiling(*args, **kwargs):
+        start_time = time.time()
+
+        ret = fn(*args, **kwargs)
+
+        elapsed_time = time.time() - start_time
+
+        if fn.__name__ not in PROF_DATA:
+            PROF_DATA[fn.__name__] = [0, []]
+        PROF_DATA[fn.__name__][0] += 1
+        PROF_DATA[fn.__name__][1].append(elapsed_time)
+
+        return ret
+
+    return with_profiling
+
+def print_prof_data():
+    for fname, data in PROF_DATA.items():
+        max_time = max(data[1])
+        avg_time = sum(data[1]) / len(data[1])
+        print("Function %s called %d times. " % (fname, data[0]),)
+        print('Execution time max: %.3f, average: %.3f' % (max_time, avg_time))
+
+def clear_prof_data():
+    global PROF_DATA
+    PROF_DATA = {}
 
 def save_snapshot(model, optimizer, snapshot_dir, epoch, iteration, snapshot_epoch_fre):
     if epoch % snapshot_epoch_fre == 0:
@@ -759,12 +788,11 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
     torch.save(data, 'data/tensor_data/Interpolation_RNN_60min/New/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
 
 # version3 용 eval.
-def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
+@profile
+def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None, step=0):
+    print('[TIMER] Starting Evaluation', print_prof_data())
     with torch.no_grad():
         running_loss = 0
-        inter_total, total = 0, 0
-        val_total = 0
-
         total_output = torch.tensor([], dtype=torch.float).to(device)
         total_target = torch.tensor([]).to(device)
 
@@ -792,8 +820,10 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             total_target = torch.cat([total_target, targets], dim=0)
             total_output = torch.cat([total_output, output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
+        print('[TIMER] Starting confidence_save_and_cal_auroc ', print_prof_data())
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, cal_roc=True)
+        print('[TIMER] Ending confidence_save_and_cal_auroc ', print_prof_data())
 
-        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, cal_roc=True)
         val_total = len(total_output)
 
         for thres in threshold:
@@ -818,16 +848,16 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             map2_confusion_matrix, dbp_log = confusion_matrix(pred4, total_target[:, 4], 2)
             confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
                                                log_dir + '/{}'.format(thres),
-                                               epoch, 0, 'val', 'sbp', v3=True)
+                                               epoch, step, 'val', 'sbp', v3=True)
             confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
                                                log_dir + '/{}'.format(thres),
-                                               epoch, 0, 'val', 'map', v3=True)
+                                               epoch, step, 'val', 'map', v3=True)
             confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-                                               log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
+                                               log_dir + '/{}'.format(thres), epoch, step, 'val', 'under90', v3=True)
             confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
-                                               log_dir + '/{}'.format(thres), epoch, 0, 'val', 'sbp2', v3=True)
+                                               log_dir + '/{}'.format(thres), epoch, step, 'val', 'sbp2', v3=True)
             confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
-                                               log_dir + '/{}'.format(thres), epoch, 0, 'val', 'map2', v3=True)
+                                               log_dir + '/{}'.format(thres), epoch, step, 'val', 'map2', v3=True)
 
 
             print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(thres, 100 * val_correct0 / val_total,
@@ -870,8 +900,8 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
         sbp_num, map_num, under90_num = 0,0,0
         for i, (inputs, (targets, targets_real), seq_len, mask) in enumerate(loader):
             batch_size, padded_len, feature_len = inputs.shape[0], inputs.shape[1], inputs.shape[2]
-            inputs = inputs.permute(1, 0, 2).to(device) #(seq, batch, 146)
-            targets = targets_real.float().permute(1, 0, 2).to(device)
+            inputs = inputs.to(device) #(seq, batch, 146)
+            targets = targets_real.float().to(device)
             output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
 
             normal_mask = eval_normal(inputs)
@@ -942,7 +972,7 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
                 100 * val_correct2 / val_total['Under90']))
 
 
-def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, cal_roc=True):
+def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0, cal_roc=True):
     '''
     mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
     data_type : Train / Validation / Test
@@ -956,22 +986,22 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
         key_dir = save_dir + '/' + key
         if not os.path.isdir(key_dir):
             os.makedirs(key_dir)
-        f = open('{}/confidence_{}_{}_{}.txt'.format(key_dir, epoch, data_type, key), 'w')
+        f = open('{}/confidence_{}_{}_{}_{}.txt'.format(key_dir, epoch, step, data_type, key), 'w')
         for i in range(len(mini_batch_outputs[:,value])):
             f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
         f.close()
         if cal_roc :
-            auroc = roc_curve_plot(key_dir, key, data_type, epoch)
+            print('[TIMER] Starting roc_curve_plot ', print_prof_data())
+            auroc = roc_curve_plot(key_dir, key, data_type, epoch, step)
+            print('[TIMER] Ending roc_curve_plot ', print_prof_data())
 
 
-
-
-def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, save_dir=None):
+def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, step= 0, save_dir=None):
     # calculate the AUROC
     # f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
     # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
 
-    conf_and_target_array = np.loadtxt('{}/confidence_{}_{}_{}.txt'.format(load_dir, epoch, data_type, category),
+    conf_and_target_array = np.loadtxt('{}/confidence_{}_{}_{}_{}.txt'.format(load_dir, epoch, step, data_type, category),
                                        delimiter=',', dtype=np.str)
     file_ = np.array(
         [np.array((float(conf_and_target.split('\t')[0]), float(conf_and_target.split('\t')[1]))) for conf_and_target in
@@ -1014,9 +1044,9 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
     ax.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
 
     if save_dir is None:    # load dir에 저장
-        ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(load_dir, category, data_type, epoch), dpi=300)
+        ax.figure.savefig('{}/ROC_{}_{}_{}epoch_{}.jpg'.format(load_dir, category, data_type, epoch, step), dpi=300)
     else :                  # 다른 dir을 지정하여 저장
-        ax.figure.savefig('{}/ROC_{}_{}_{}epoch.jpg'.format(save_dir, category, data_type, epoch), dpi=300)
+        ax.figure.savefig('{}/ROC_{}_{}_{}epoch_{}.jpg'.format(save_dir, category, data_type, epoch, step), dpi=300)
     plt.close("all")
     return auroc
 
