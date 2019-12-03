@@ -11,7 +11,7 @@ python3 -W ignore ./src/run_rnn_v3.py \
 --model_type='rnn_v3' \
 --optim='SGD' \
 \
---lr=0.001 \
+--lr=0.01 \
 --lr_decay_rate=0.1 \
 --weight_decay=5e-6 \
 --max_epoch=1000 \

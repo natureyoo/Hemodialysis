@@ -22,7 +22,7 @@ def parse_arg():
 
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default 0.001)')
     parser.add_argument('--lr_decay_rate', type=float)
-    parser.add_argument('--lr_decay_epoch', default=[3,6,10,20,100,200])
+    parser.add_argument('--lr_decay_epoch', default=[3,6,10,50,100,200])
     parser.add_argument('--weight_decay', type=float, default=0.0001)
     parser.add_argument('--max_epoch', type=int, default=10)
     parser.add_argument('--hidden_size', type=int, default=256)
@@ -76,6 +76,7 @@ def rnn_classification(args):
     elif args.model_type == 'rnn_v2':
         model = RNN_V2(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate).to(device)
     elif args.model_type == 'rnn_v3':
+
         model = RNN_V3(input_fix_size, input_seq_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, num_class1, num_class2, num_class3).to(device)
     else:
         print('model err')
@@ -95,29 +96,41 @@ def rnn_classification(args):
     # train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
     # feature selection, manually.
-    full_idx = [i for i in range(len(train_data[0][0]) - 1)]
+    # full_idx = [i for i in range(len(train_data[0][0]) - 1)]
     seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
-    fix_idx = [i for i in full_idx if i not in seq_idx and i != 135]
-    train_data_ = []
-    for i in range(len(train_data)):
-        train_data[i] = train_data[i][:,1:] # remove masking
-        train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
-    train_data = train_data_
-    del train_data_
+    # fix_idx = [i for i in full_idx if i not in seq_idx and i != 135]
+    # train_data_ = []
+    # for i in range(len(train_data)):
+    #     train_data[i] = train_data[i][:,1:] # remove masking
+    #     train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
+    # train_data = train_data_
+    # del train_data_
 
     ori_len = len(train_data)
     # Cut data by some rule
 
-    train_seq_len_list = [len(x[1]) for x in train_data]
-    print("num train data : {} --> {}".format(ori_len, len(train_data)))
-    train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
-    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=loader.pad_collate)
+    # train_seq_len_list = [len(x[1]) for x in train_data]
+    # print("num train data : {} --> {}".format(ori_len, len(train_data)))
+    # train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
+    # train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=loader.pad_collate)
 
     val_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Validation_60min.pt')
     # val_data = val_data[:int(len(val_data) * 0.1)]
     full_idx = [i for i in range(len(val_data[0][0]))]
     seq_idx = [0] + [i + 1 for i in seq_idx] # contain mask idx
     fix_idx = [i for i in full_idx if i not in seq_idx and i != 136]
+
+    train_data_ = []
+    for i in range(len(train_data)):
+        train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
+    train_data = train_data_
+    del train_data_
+
+    train_seq_len_list = [len(x[1]) for x in train_data]
+    print("num train data : {} --> {}".format(ori_len, len(train_data)))
+    train_data = loader.RNN_Val_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
+    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: loader.pad_collate(batch, True))
+
     val_data_ = []
     for i in range(len(val_data)):
         val_data_.append([val_data[i][0,fix_idx], val_data[i][:,seq_idx]])
@@ -167,27 +180,35 @@ def rnn_classification(args):
         # # eval ###########################
         # ##################################
 
-
         model.train()
 
         running_loss, running_loss_sbp, running_loss_map, running_loss_under90, running_loss_sbp2, running_loss_map2 = 0,0,0,0,0,0
         
         total = 0
         train_total, train_correct_sbp,train_correct_map, train_correct_under_90, train_correct_sbp2, train_correct_map2  = 0,0,0,0,0,0
-        for batch_idx, ((inputs_fix, inputs_seq), (targets, targets_real), seq_len) in enumerate(train_loader):
+        for batch_idx, ((inputs_fix, inputs_seq), (targets, targets_real), seq_len, mask) in enumerate(train_loader):
             inputs_fix = inputs_fix.to(device)
             inputs_seq = inputs_seq.to(device)
             targets = targets.float().to(device)
             seq_len = torch.LongTensor(seq_len).to(device)
+            mask = mask.byte().to(device)
+
             output = model(inputs_fix, inputs_seq, seq_len, device) # shape : (seq_len, batch size, 5)
 
             flattened_output = torch.tensor([]).to(device)
             flattened_target = torch.tensor([]).to(device)
+            flattened_mask = torch.tensor([]).byte().to(device)
 
             for idx, seq in enumerate(seq_len):
                 flattened_output = torch.cat([flattened_output, output[:seq, idx, :].reshape(-1, output_size)], dim=0)
                 flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
-            
+                flattened_mask = torch.cat((flattened_mask, mask[:seq, idx].reshape(-1, 1)), dim=0)
+
+            flattened_mask = flattened_mask.unsqueeze(-1).repeat(1, 1, 3)
+
+            flattened_output = torch.masked_select(flattened_output, flattened_mask).view(-1,3)
+            flattened_target = torch.masked_select(flattened_target, flattened_mask).view(-1,3)
+
             loss_sbp = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
             loss_map = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
             loss_under90 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
@@ -261,11 +282,20 @@ def rnn_classification(args):
     ####################################################################3
     # TODO : test 
     print("\n\n\n ***Start testing***")
-    test_data = torch.load('tensor_data/RNN/60min/Test.pt')
-    test_seq_len_list = [len(x) for x in test_data]
-    test_padded = rnn_utils.pad_sequence([torch.tensor(x) for x in test_data])
-    test_data = loader.RNN_Dataset((test_padded, test_seq_len_list), type='Classification', ntime=60)
-    test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
+    test_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Validation_60min.pt')
+    full_idx = [i for i in range(len(val_data[0][0]))]
+    seq_idx = [0] + [i + 1 for i in seq_idx] # contain mask idx
+    fix_idx = [i for i in full_idx if i not in seq_idx and i != 136]
+    val_data_ = []
+    for i in range(len(val_data)):
+        val_data_.append([val_data[i][0,fix_idx], val_data[i][:,seq_idx]])
+    val_data = val_data_
+    del val_data_
+
+    val_seq_len_list = [len(x) for x in val_data]
+    val_dataset = loader.RNN_Val_Dataset((val_data, val_seq_len_list), type=task_type, ntime=60)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
+                            collate_fn=lambda batch: loader.pad_collate(batch, True))
     test_loss, test_size, _, _, _, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
     print('test loss : {:.4f}'.format(test_loss))
     # writer.add_scalar('Loss/Test', test_loss/test_size, 1)

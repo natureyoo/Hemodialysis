@@ -780,7 +780,7 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             # loss_sbp2 = criterion(output[:,3], targets[:,3])
             # loss_map2 = criterion(output[:,4], targets[:,4])
 
-            loss = loss_sbp + loss_map
+            loss = loss_sbp + loss_map + loss_under90
             running_loss += loss.item()
 
             total_target = torch.cat([total_target, targets], dim=0)
@@ -985,7 +985,7 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
     for delta in np.arange(start, end, gap):
         
         tpr = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
-        fpr = np.sum(file_[target_normal_idxs_flag, 0] > delta) / np.sum(target_normal_idxs_flag)
+        fpr = np.sum(file_[target_normal_idxs_flag, 0] >= delta) / np.sum(target_normal_idxs_flag)
         # print(start, end, gap, delta, tpr, fpr)
         # exit()
         # f1.write("{}\n".format(tpr))

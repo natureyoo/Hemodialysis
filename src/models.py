@@ -381,8 +381,8 @@ class RNN_V3(nn.Module):
         output shape : (seq, batch size, 5)
         '''
         h1, h2, h3, h4 = None, None, None, None
-        # X_fix = X_fix.float()
-        # X_fix = self.BN_before_fc_fix(X_fix)
+        X_fix = X_fix.float()
+        X_fix = self.BN_before_fc_fix(X_fix)
         X_seq = X_seq.float()
         X_seq = X_seq.permute(1, 2, 0)
         X_seq = self.BN_before_fc_seq(X_seq)
@@ -390,7 +390,7 @@ class RNN_V3(nn.Module):
         seq_length = X_seq.size(0)
 
         # fix input
-        # h_fix = self.fc_fix(X_fix)
+        h_fix = self.fc_fix(X_fix)
 
         outputs = list()
         for i in range(seq_length):
@@ -408,8 +408,8 @@ class RNN_V3(nn.Module):
             h_prop = self.inter_fc_4(h_prop)
             h4 = self.gru_module_4((h_prop+X_seq[i]), h4)
             h_prop = h4
-            # h_prop = self.merge_fc(torch.cat((h_fix, h_prop), 1))
-            # h_prop = h_prop.float()
+            h_prop = self.merge_fc(torch.cat((h_fix, h_prop), 1))
+            h_prop = h_prop.float()
             outputs.append(h_prop)
             
         outputs = torch.stack(outputs)  # list 를 torch.Tensor로 만들기 위해
