@@ -290,9 +290,10 @@ class RNN_V2(nn.Module):
 
 
 class RNN_V3(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layer, output_size, batch_size, dropout_rate, sbp_num_class=7, map_num_class=5, another_class=0):
+    def __init__(self, input_fix_size, input_seq_size, hidden_size, num_layer, output_size, batch_size, dropout_rate, sbp_num_class=7, map_num_class=5, another_class=0):
         super().__init__()
-        self.input_size = input_size
+        self.input_fix_size = input_fix_size
+        self.input_seq_size = input_seq_size
         self.hidden_size = hidden_size
         self.num_layer = num_layer
         self.output_size = output_size
@@ -301,27 +302,27 @@ class RNN_V3(nn.Module):
         self.temp_logit = None
         self.temp_logit2 = None
 
-        total_num_class = sbp_num_class + map_num_class + another_class
-        # self.fc_before_rnn = nn.Sequential(nn.Linear(input_size, input_size), nn.Tanh(), nn.Linear(input_size, input_size))
-        self.fc_before_rnn = nn.Sequential(nn.Linear(input_size, input_size))
-        self.BN_before_fc = nn.BatchNorm1d(input_size)
+        self.fc_fix = nn.Sequential(nn.Linear(input_fix_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
+        self.BN_before_fc_fix = nn.BatchNorm1d(input_fix_size)
+        self.BN_before_fc_seq = nn.BatchNorm1d(input_seq_size)
 
-        self.gru_module_1 = nn.GRUCell(input_size, hidden_size)
+        self.gru_module_1 = nn.GRUCell(input_seq_size, hidden_size)
         self.layer_norm = nn.LayerNorm(hidden_size)
         self.gru_module_2 = nn.GRUCell(hidden_size, hidden_size)
         self.layer_norm_2 = nn.LayerNorm(hidden_size)
         self.gru_module_3 = nn.GRUCell(hidden_size, hidden_size)
         self.layer_norm_3 = nn.LayerNorm(hidden_size)
 
-        
-
         self.inter_fc_1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
         self.inter_fc_2 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
         self.inter_fc_3 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
 
-        self.gru_module_4 = nn.GRUCell(input_size, hidden_size)
+        self.gru_module_4 = nn.GRUCell(input_seq_size, hidden_size)
         self.layer_norm_3 = nn.LayerNorm(hidden_size)
-        self.inter_fc_4 = nn.Sequential(nn.Linear(hidden_size,input_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(input_size, input_size))
+        self.inter_fc_4 = nn.Sequential(nn.Linear(hidden_size,input_seq_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(input_seq_size, input_seq_size))
+
+        self.merge_fc = nn.Sequential(nn.Linear(2 * hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
+
 
         self.fc_class1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
             nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), 
@@ -338,17 +339,17 @@ class RNN_V3(nn.Module):
             # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
             nn.Linear(hidden_size, 1))
 
-        self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-            nn.Linear(hidden_size, 1))
-
-        self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-            nn.Linear(hidden_size, 1))
+        # self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+        #     nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+        #     # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+        #     nn.Linear(hidden_size, 1))
+        #
+        # self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+        #     nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+        #     # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+        #     nn.Linear(hidden_size, 1))
             
-        for m in [self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_before_rnn] :
+        for m in [self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_fix] :
             if isinstance(m, nn.BatchNorm1d):
                 if m.weight is not None:
                     m.weight.data.normal_(0.0, 0.02)
@@ -370,7 +371,7 @@ class RNN_V3(nn.Module):
             else:
                 pass
 
-    def forward(self, X, seq_len, device):
+    def forward(self, X_fix, X_seq, seq_len, device):
         '''
         X : torch.Tensor
         X shape : (seq, batch size, feature size)
@@ -380,16 +381,20 @@ class RNN_V3(nn.Module):
         output shape : (seq, batch size, 5)
         '''
         h1, h2, h3, h4 = None, None, None, None
-        X = X.float()
-        X = X.permute(1, 2, 0)
-        X = self.BN_before_fc(X)
-        X = X.permute(2,0,1)
-        seq_length = X.size(0)
+        # X_fix = X_fix.float()
+        # X_fix = self.BN_before_fc_fix(X_fix)
+        X_seq = X_seq.float()
+        X_seq = X_seq.permute(1, 2, 0)
+        X_seq = self.BN_before_fc_seq(X_seq)
+        X_seq = X_seq.permute(2,0,1)
+        seq_length = X_seq.size(0)
 
-        # X = self.batchnorm_by_using_first_seq(X).float()
+        # fix input
+        # h_fix = self.fc_fix(X_fix)
+
         outputs = list()
         for i in range(seq_length):
-            h1 = self.gru_module_1(X[i], h1)
+            h1 = self.gru_module_1(X_seq[i], h1)
             h_prop = self.inter_fc_1(h1)
             h_prop = self.layer_norm(h_prop)
             h_prop = F.relu(h_prop)
@@ -400,14 +405,11 @@ class RNN_V3(nn.Module):
             h3 = self.gru_module_3(h_prop, h3)
             h_prop = self.inter_fc_3(h3)
             h_prop = self.layer_norm_3(h_prop)
-
             h_prop = self.inter_fc_4(h_prop)
-
-            h4 = self.gru_module_4((h_prop+X[i]), h4)
+            h4 = self.gru_module_4((h_prop+X_seq[i]), h4)
             h_prop = h4
-
-
-            h_prop = h_prop.float()
+            # h_prop = self.merge_fc(torch.cat((h_fix, h_prop), 1))
+            # h_prop = h_prop.float()
             outputs.append(h_prop)
             
         outputs = torch.stack(outputs)  # list 를 torch.Tensor로 만들기 위해
@@ -415,10 +417,11 @@ class RNN_V3(nn.Module):
         output1 = self.fc_class1(outputs)
         output2 = self.fc_class2(outputs)
         output3 = self.fc_class3(outputs)
-        output4 = self.fc_class4(outputs)
-        output5 = self.fc_class5(outputs)
+        # output4 = self.fc_class4(outputs)
+        # output5 = self.fc_class5(outputs)
 
-        return torch.cat([output1, output2, output3, output4, output5], dim=-1)
+        # return torch.cat([output1, output2, output3, output4, output5], dim=-1)
+        return torch.cat([output1, output2, output3], dim=-1)
 
     def init_hidden(self):
         hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)

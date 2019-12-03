@@ -11,16 +11,16 @@ python3 -W ignore ./src/run_rnn_v3.py \
 --model_type='rnn_v3' \
 --optim='SGD' \
 \
---lr=1e-3 \
+--lr=0.001 \
 --lr_decay_rate=0.1 \
---weight_decay=5e-3 \
+--weight_decay=5e-6 \
 --max_epoch=1000 \
---hidden_size=1024 \
+--hidden_size=256 \
 --rnn_hidden_layers 3 \
 --dropout_rate 0.1 \
 --batch_size=32 \
 \
 --snapshot_epoch_freq=1 \
---valid_iter_freq=500 \
+--valid_iter_freq=5000 \
 --train_print_freq=50 \
 --init_epoch=0
