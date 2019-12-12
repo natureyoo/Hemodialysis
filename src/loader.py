@@ -8,19 +8,19 @@ def pad_collate(batch, val=False):
     inter_target = [i[1][0] for i in batch]
     real_target = [i[1][1] for i in batch]
     batch_seq_len = [i[2] for i in batch]
-    if val: mask=[i[3] for i in batch]
+    # if val: mask=[i[3] for i in batch]
 
     input_fix = torch.tensor(input_fix)
     input_seq = rnn_utils.pad_sequence([torch.tensor(x) for x in input_seq])
     inter_target = rnn_utils.pad_sequence([torch.tensor(x) for x in inter_target])
     real_target = rnn_utils.pad_sequence([torch.tensor(x) for x in real_target])
-    if val: mask = rnn_utils.pad_sequence([torch.tensor(x) for x in mask])
-
-    if val:
-        return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len, mask)
-    else:
-        return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len)
-
+    # if val: mask = rnn_utils.pad_sequence([torch.tensor(x) for x in mask])
+    #
+    # if val:
+    #     return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len, mask)
+    # else:
+    #     return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len)
+    return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len)
 
 class HD_Dataset(Dataset):
     def __init__(self, data):
@@ -59,8 +59,8 @@ class RNN_Dataset(Dataset):
         else:
             # target = self.dataset[idx][1][:,-14:]
             # x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-14]), (target[:,[4,5,6,10,11]], target[:,[7,8,9,12,13]])
-            target = self.dataset[idx][1][:,-10:]
-            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-10]), (target[:,[4,5,6]], target[:,[7,8,9]])
+            target = self.dataset[idx][1][:,-9:]
+            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-9]), (target[:,[4,5,6]], target[:,[4,5,6]])
         batch_seq_len = self.seq_len[idx]
         return (x, y, batch_seq_len)
 

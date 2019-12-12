@@ -674,18 +674,41 @@ def test_one_hour(batch_inputs, batch_outputs_sbp, batch_outputs_map, batch_targ
 # 60분 단위로 data를 바꾸기 위한 부분
 # TODO : interpolation 부분이 아닌, real만 반영한 target
 # TODO : 현재값을 제외하고, 앞으로의 값만 반영한 target
-def data_modify_same_ntime(data, ntime=60, d_type='Train'):
-    mean_HD_ctime = 112.71313384332716
-    std_HD_ctime = 78.88638128125473
-    mean_VS_sbp = 132.28494659660691
-    mean_VS_dbp = 72.38785072807198
-    std_VS_sbp = 26.863242507719363
-    std_VS_dbp = 14.179094454260184
+def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=True):
 
+    if base_dir is None:
+        mean_HD_ctime = 112.71313384332716
+        std_HD_ctime = 78.88638128125473
+        mean_VS_sbp = 132.28494659660691
+        mean_VS_dbp = 72.38785072807198
+        std_VS_sbp = 26.863242507719363
+        std_VS_dbp = 14.179094454260184
+        idx_HD_ctime = 7
+        idx_VS_sbp = 12
+        idx_VS_dbp = 13
 
-    c_time_list = [(data[i][:,7]*std_HD_ctime+mean_HD_ctime).astype(int) for i in range(len(data))]
-    sbp_list =[(data[i][:,12]*std_VS_sbp+mean_VS_sbp).astype(int) for i in range(len(data))]
-    map_list =[((data[i][:,13]*std_VS_dbp+mean_VS_dbp) / 3. + (data[i][:,12]*std_VS_sbp+mean_VS_sbp)* 2. / 3.).astype(int) for i in range(len(data))]
+    else:
+        with open(os.path.join(base_dir, 'mean_value.json')) as mean, open(os.path.join(base_dir, 'std_value.json')) as std, open(os.path.join(base_dir, 'columns.csv')) as columns:
+            mean_data = json.load(mean)
+            std_data = json.load(std)
+            mean_HD_ctime = mean_data['HD_ctime']
+            mean_VS_sbp = mean_data['VS_sbp']
+            mean_VS_dbp = mean_data['VS_dbp']
+            std_HD_ctime = std_data['HD_ctime']
+            std_VS_sbp = std_data['VS_sbp']
+            std_VS_dbp = std_data['VS_dbp']
+            for idx, col in enumerate(columns.readlines()):
+                col = col.strip()
+                if col == 'VS_sbp':
+                    idx_VS_sbp = idx
+                elif col == 'VS_dbp':
+                    idx_VS_dbp = idx
+                elif col == 'HD_ctime':
+                    idx_HD_ctime = idx
+
+    c_time_list = [(data[i][:,idx_HD_ctime]*std_HD_ctime+mean_HD_ctime).astype(int) for i in range(len(data))]
+    sbp_list =[(data[i][:,idx_VS_sbp]*std_VS_sbp+mean_VS_sbp).astype(int) for i in range(len(data))]
+    map_list =[((data[i][:,idx_VS_dbp]*std_VS_dbp+mean_VS_dbp) / 3. + (data[i][:,idx_VS_sbp]*std_VS_sbp+mean_VS_sbp)* 2. / 3.).astype(int) for i in range(len(data))]
     # 각 frame의 c_time, sbp, map를 받았음. 
     # <<<<중요>>>>> 7,12,13은 data 형태에 따라서 바꿔줘야 함
 
@@ -696,11 +719,16 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
         map_absolute_value = map_list[data_idx]
         sbp_init_value = sbp_list[data_idx][0]
         map_init_value = map_list[data_idx][0]
-        dbp_init_value = data[data_idx][0,13] * std_VS_dbp + mean_VS_dbp
+        dbp_init_value = data[data_idx][0,idx_VS_dbp] * std_VS_dbp + mean_VS_dbp
         sbp_diff = sbp_absolute_value - sbp_init_value
         map_diff = map_list[data_idx] - map_init_value
 
-        real_flag = [x[0] == 1 for x in data[data_idx]]
+        if mask:
+            real_flag = [x[0] == 1 for x in data[data_idx]]
+            temp_data_concat = np.zeros((len(sbp_diff), 10))
+        else:
+            real_flag = [1 for _ in data[data_idx]]
+            temp_data_concat = np.zeros((len(sbp_diff), 5))
 
         # print()
         # print('c_time_list[{}]: '.format(data_idx), c_time_list[data_idx])
@@ -712,7 +740,6 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
         # print('sbp_diff[{}]:'.format(data_idx), sbp_diff)
         # print('map_diff[{}]:'.format(data_idx), map_diff)
 
-        temp_data_concat = np.zeros((len(sbp_diff), 10))
         for frame_idx in range(len(data[data_idx])):
             criterion_flag = (c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx]) # shape : [True, True, True, True, False, False, False, ....]
 
@@ -750,10 +777,16 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train'):
                 if last_target_sbp <= -90 : sbp_under_90 = 1
                 else: sbp_under_90 = 0
 
-            temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90, curr_sbp_exist, curr_map_exist, curr_real_sbp_exist, curr_real_map_exist))
+            if mask:
+                temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90, curr_sbp_exist, curr_map_exist, curr_real_sbp_exist, curr_real_map_exist))
+            else:
+                temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, curr_sbp_exist, curr_map_exist))
+
         data[data_idx] = np.concatenate((data[data_idx], temp_data_concat), axis=1)
 
-    torch.save(data, 'data/tensor_data/Interpolation_RNN_60min/New/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
+    # torch.save(data, 'data/tensor_data/Interpolation_RNN_60min/New/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
+
+    return data
 
 # version3 용 eval.
 def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None, step=0):
@@ -762,29 +795,30 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
         total_output = torch.tensor([], dtype=torch.float).to(device)
         total_target = torch.tensor([]).to(device)
 
-        for i, ((inputs_fix, inputs_seq), (targets, targets_real), seq_len, mask) in enumerate(loader):
+        for i, ((inputs_fix, inputs_seq), (targets, targets_real), seq_len) in enumerate(loader):
             inputs_fix = inputs_fix.to(device)
             inputs_seq = inputs_seq.to(device)
             targets = targets_real.float().to(device)
             output = model(inputs_fix, inputs_seq, seq_len, device) # shape : (seq, batch size, 3)
 
-            mask = mask.byte().to(device)
-            mask = mask.unsqueeze(-1).repeat(1,1,3)
+            flattened_output = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
 
-            output = torch.masked_select(output, mask).view(-1,3)
-            targets = torch.masked_select(targets, mask).view(-1,3)
+            for idx, seq in enumerate(seq_len):
+                flattened_output = torch.cat([flattened_output, output[:seq, idx, :].reshape(-1, output_size)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
 
-            loss_sbp = criterion(output[:,0], targets[:,0])
-            loss_map = criterion(output[:,1], targets[:,1])
-            loss_under90 = criterion(output[:,2], targets[:,2])
+            loss_sbp = criterion(flattened_output[:,0], flattened_target[:,0])
+            loss_map = criterion(flattened_output[:,1], flattened_target[:,1])
+            loss_under90 = criterion(flattened_output[:,2], flattened_target[:,2])
             # loss_sbp2 = criterion(output[:,3], targets[:,3])
             # loss_map2 = criterion(output[:,4], targets[:,4])
 
             loss = loss_sbp + loss_map + loss_under90
             running_loss += loss.item()
 
-            total_target = torch.cat([total_target, targets], dim=0)
-            total_output = torch.cat([total_output, output], dim=0)
+            total_target = torch.cat([total_target, flattened_target], dim=0)
+            total_output = torch.cat([total_output, flattened_output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
         confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, cal_roc=True)
 

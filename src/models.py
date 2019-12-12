@@ -307,13 +307,14 @@ class RNN_V3(nn.Module):
         self.BN_before_fc_seq = nn.BatchNorm1d(input_seq_size)
 
         self.gru_module_1 = nn.GRUCell(input_seq_size, hidden_size)
-        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.layer_norm = nn.LayerNorm(input_seq_size)
         self.gru_module_2 = nn.GRUCell(hidden_size, hidden_size)
         self.layer_norm_2 = nn.LayerNorm(hidden_size)
         self.gru_module_3 = nn.GRUCell(hidden_size, hidden_size)
         self.layer_norm_3 = nn.LayerNorm(hidden_size)
 
-        self.inter_fc_1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
+        self.inter_fc_1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, input_seq_size))
+        # self.inter_fc_1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, input_seq_size))
         self.inter_fc_2 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
         self.inter_fc_3 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
 
@@ -350,6 +351,7 @@ class RNN_V3(nn.Module):
         #     nn.Linear(hidden_size, 1))
             
         for m in [self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_fix] :
+        # for m in [self.inter_fc_1, self.fc_fix] :
             if isinstance(m, nn.BatchNorm1d):
                 if m.weight is not None:
                     m.weight.data.normal_(0.0, 0.02)
@@ -398,20 +400,25 @@ class RNN_V3(nn.Module):
             h_prop = self.inter_fc_1(h1)
             h_prop = self.layer_norm(h_prop)
             h_prop = F.relu(h_prop)
-            h2 = self.gru_module_2(h_prop, h2)
-            h_prop = self.inter_fc_2(h2)
-            h_prop = self.layer_norm_2(h_prop)
-            h_prop = F.relu(h_prop)
-            h3 = self.gru_module_3(h_prop, h3)
-            h_prop = self.inter_fc_3(h3)
-            h_prop = self.layer_norm_3(h_prop)
-            h_prop = self.inter_fc_4(h_prop)
+            # h2 = self.gru_module_2(h_prop, h2)
+            # reset_gate, input_gate = self.get_gate_value(self.gru_module_2, X_seq[i], torch.zeros(64, 256).float().to(device))
+            # print('{}th reset_gate...{}, mean : {}'.format(i, reset_gate.shape, torch.mean(reset_gate)))
+            # print(reset_gate)
+            # print('{}th input_gate...{}, mean : {}'.format(i, input_gate.shape, torch.mean(input_gate)))
+            # print(input_gate)
+            # h_prop = self.inter_fc_2(h2)
+            # h_prop = self.layer_norm_2(h_prop)
+            # h_prop = F.relu(h_prop)
+            # h3 = self.gru_module_3(h_prop, h3)
+            # h_prop = self.inter_fc_3(h3)
+            # h_prop = self.layer_norm_3(h_prop)
+            # h_prop = self.inter_fc_4(h_prop)
             h4 = self.gru_module_4((h_prop+X_seq[i]), h4)
             h_prop = h4
             h_prop = self.merge_fc(torch.cat((h_fix, h_prop), 1))
             h_prop = h_prop.float()
             outputs.append(h_prop)
-            
+
         outputs = torch.stack(outputs)  # list 를 torch.Tensor로 만들기 위해
 
         output1 = self.fc_class1(outputs)
@@ -419,7 +426,6 @@ class RNN_V3(nn.Module):
         output3 = self.fc_class3(outputs)
         # output4 = self.fc_class4(outputs)
         # output5 = self.fc_class5(outputs)
-
         # return torch.cat([output1, output2, output3, output4, output5], dim=-1)
         return torch.cat([output1, output2, output3], dim=-1)
 
