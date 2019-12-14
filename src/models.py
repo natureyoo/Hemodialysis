@@ -340,15 +340,15 @@ class RNN_V3(nn.Module):
             # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
             nn.Linear(hidden_size, 1))
 
-        # self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
-        #     nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     nn.Linear(hidden_size, 1))
-        #
-        # self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
-        #     nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     nn.Linear(hidden_size, 1))
+        self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+
+        self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
             
         for m in [self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_fix] :
         # for m in [self.inter_fc_1, self.fc_fix] :
@@ -424,10 +424,10 @@ class RNN_V3(nn.Module):
         output1 = self.fc_class1(outputs)
         output2 = self.fc_class2(outputs)
         output3 = self.fc_class3(outputs)
-        # output4 = self.fc_class4(outputs)
-        # output5 = self.fc_class5(outputs)
-        # return torch.cat([output1, output2, output3, output4, output5], dim=-1)
-        return torch.cat([output1, output2, output3], dim=-1)
+        output4 = self.fc_class4(outputs)
+        output5 = self.fc_class5(outputs)
+        return torch.cat([output1, output2, output3, output4, output5], dim=-1)
+        # return torch.cat([output1, output2, output3], dim=-1)
 
     def init_hidden(self):
         hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)
