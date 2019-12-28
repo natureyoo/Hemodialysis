@@ -49,13 +49,13 @@ class HemodialysisDataset():
         self.columns = list(filter(lambda x: x not in ['ID_class', 'ID_hd'], self.hemodialysis_frame.columns))
         if save:
             print("Saving...")
-            with open('./tensor_data/{}/mean_value.json'.format(self.model_type), 'w') as f:
+            with open('../tensor_data/{}/mean_value.json'.format(self.model_type), 'w') as f:
                 f.write(json.dumps(self.mean_for_normalize))
 
-            with open('./tensor_data/{}/std_value.json'.format(self.model_type), 'w') as f:
+            with open('../tensor_data/{}/std_value.json'.format(self.model_type), 'w') as f:
                 f.write(json.dumps(self.std_for_normalize))
 
-            with open('./tensor_data/{}/columns.csv'.format(self.model_type), 'w') as f:
+            with open('../tensor_data/{}/columns.csv'.format(self.model_type), 'w') as f:
                 for c in self.columns:
                     f.write('%s\n' % c)
             for type in ['Train', 'Validation', 'Test']:
@@ -69,9 +69,10 @@ class HemodialysisDataset():
                     print(df.shape, end=' ')
                     df = self.convert_to_sequence(df, type)
                     print(df.shape, end=' ')
-                if not(os.path.isdir('tensor_data/RNN')):
-                    os.makedirs(os.path.join('tensor_data/RNN'))
-                torch.save(df, './tensor_data/{}/{}.pt'.format(self.model_type, type))
+                if not(os.path.isdir('../tensor_data/RNN')):
+                    os.makedirs(os.path.join('../tensor_data/RNN'))
+                # torch.save(df, '../tensor_data/RNN/{}.pt'.format(type))
+                torch.save(df, '../tensor_data/{}/{}.pt'.format(self.model_type, type))
 
         if not save:
             self.hemodialysis_frame.drop('ID_class', axis=1, inplace=True)
@@ -152,7 +153,6 @@ class HemodialysisDataset():
             else:
                 self.hemodialysis_frame[col] = 0
 
-
     def add_target_class(self):
         def eval_target(diff, type):
             if type == 'sbp':
@@ -220,19 +220,18 @@ class HemodialysisDataset():
             self.total_seq.append(seq.values.tolist())
 
         self.total_seq = [np.array(i) for i in self.total_seq]
-        self.total_seq = data_modify_same_ntime(np.array(self.total_seq), 60, type, './tensor_data/RNN/', False)
+        self.total_seq = utils.data_modify_same_ntime(np.array(self.total_seq), 60, type, '../tensor_data/RNN/', False)
 
         return self.total_seq
 
 
 
 def make_data():
-    # path ='raw_data/'
-    # files = ['Hemodialysis1_1003.csv','Hemodialysis2_1003.csv']
-    # # files = ['sample.csv']
-    # dataset = HemodialysisDataset(path,files,'MLP', save=True)
-    path ='/home/jayeon/Documents/code/Hemodialysis/data/raw_data' # raw_data
-    files = ['Hemodialysis1_1013.csv'] # ['sample.csv']
+    path ='../raw_data/'
+    # files = ['Hemodialysis2_1013.csv']
+    files = ['Hemodialysis1_1013.csv','Hemodialysis2_1013.csv']
+    # files = ['sample.csv']
+    # files = ['Hemodialysis1_1013.csv'] # ['sample.csv']
     dataset = HemodialysisDataset(path, files, 'RNN', save=True)
     return dataset
 

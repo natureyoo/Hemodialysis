@@ -9,9 +9,18 @@ import os
 import numpy as np
 import json
 import shutil
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+import seaborn as sn
 import json
 import random
+
+params = {'legend.fontsize': 'x-large',
+          'figure.figsize': (9, 9),
+         'axes.labelsize': 15,
+         'axes.titlesize': 15}
+mpl.rcParams.update(params)
+
 
 def copy_file(src_path, dst_dir):
     if not os.path.isdir(dst_dir):
@@ -96,6 +105,8 @@ def create_toy_data(num_data, input_size, seed, seq_len=40):
     return X, y, seq_len_list
 
 def compute_f1score(true, pred, indent=False):
+    true = true.detach().cpu().numpy()
+    pred = pred.detach().cpu().numpy()
     f1 = sklearn.metrics.f1_score(true, pred)
     precision = sklearn.metrics.precision_score(true,pred)
     recall = sklearn.metrics.recall_score(true,pred)
@@ -457,13 +468,9 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
 
     return running_loss/i, i, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
 
-
 # v3 : 세 기준에 의한 binary classification
 def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_type='train', name=None, v3=False):
-    import seaborn as sn
-    import matplotlib
-    matplotlib.use('Agg')
-    from matplotlib import pyplot as plt
+    mpl.use('Agg')
 
     save_dir = save_dir + '/confusion_matrix'
     if not os.path.isdir(save_dir):
@@ -480,16 +487,17 @@ def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_ty
 
     df_cm = pd.DataFrame(matrix.astype(int), index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
     plt.figure(figsize = (9,7))
-    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=10000, fmt="d", annot_kws={"size": 9})
-    ax.set_title('{}_{}epoch_{}iter_count'.format(name, epoch, iteration))
+    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=10000, fmt="d", annot_kws={"size": 15})
+    ax.set_title('{}_{}epoch_count'.format(name, epoch))
     ax.yaxis.set_ticklabels(ax.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=10)
     ax.xaxis.set_ticklabels(ax.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=10)
     bottom, top = ax.get_ylim()
     ax.set_ylim(bottom + 0.5, top - 0.5)
-    plt.ylabel('true label')
-    plt.xlabel('pred label')
+    plt.ylabel('True label')
+    plt.xlabel('Pred. label')
 
-    ax.figure.savefig('{}/{}_{}_{}epoch_{}iter_count.jpg'.format(save_dir, data_type, name, epoch, iteration))
+    ax.figure.savefig('{}/{}_{}_{}Epoch_Count.jpg'.format(save_dir, data_type, name, epoch))
+    # ax.figure.savefig('{}/{}_{}_{}epoch_{}iter_count.jpg'.format(save_dir, data_type, name, epoch, iteration))
     plt.close("all")
 
 
@@ -499,16 +507,17 @@ def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_ty
 
     df_cm = pd.DataFrame(matrix, index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
     plt.figure(figsize = (9,7))
-    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=1)
-    ax.set_title('{}_{}epoch_{}iter'.format(name, epoch, iteration))
+    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=1, annot_kws={"size": 15})
+    ax.set_title('{}_{}Epoch'.format(name, epoch))
     ax.yaxis.set_ticklabels(ax.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=10)
     ax.xaxis.set_ticklabels(ax.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=10)
     bottom, top = ax.get_ylim()
     ax.set_ylim(bottom + 0.5, top - 0.5)
-    plt.ylabel('true label')
-    plt.xlabel('pred label')
+    plt.ylabel('True label')
+    plt.xlabel('Pred. label')
 
-    ax.figure.savefig('{}/{}_{}_{}epoch_{}iter.jpg'.format(save_dir, data_type, name, epoch, iteration))
+    ax.figure.savefig('{}/{}_{}_{}Epoch.jpg'.format(save_dir, data_type, name, epoch))
+    # ax.figure.savefig('{}/{}_{}_{}epoch_{}iter.jpg'.format(save_dir, data_type, name, epoch, iteration))
     plt.close("all")
 
 
@@ -675,118 +684,121 @@ def test_one_hour(batch_inputs, batch_outputs_sbp, batch_outputs_map, batch_targ
 # TODO : interpolation 부분이 아닌, real만 반영한 target
 # TODO : 현재값을 제외하고, 앞으로의 값만 반영한 target
 def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=True):
+   new_data = np.copy(data)
+   if base_dir is None:
+       mean_HD_ctime = 112.71313384332716
+       std_HD_ctime = 78.88638128125473
+       mean_VS_sbp = 132.28494659660691
+       mean_VS_dbp = 72.38785072807198
+       std_VS_sbp = 26.863242507719363
+       std_VS_dbp = 14.179094454260184
+       idx_HD_ctime = 7
+       idx_VS_sbp = 12
+       idx_VS_dbp = 13
 
-    if base_dir is None:
-        mean_HD_ctime = 112.71313384332716
-        std_HD_ctime = 78.88638128125473
-        mean_VS_sbp = 132.28494659660691
-        mean_VS_dbp = 72.38785072807198
-        std_VS_sbp = 26.863242507719363
-        std_VS_dbp = 14.179094454260184
-        idx_HD_ctime = 7
-        idx_VS_sbp = 12
-        idx_VS_dbp = 13
+   else:
+       with open(os.path.join(base_dir, 'mean_value.json')) as mean, open(os.path.join(base_dir, 'std_value.json')) as std, open(os.path.join(base_dir, 'columns.csv')) as columns:
+           mean_data = json.load(mean)
+           std_data = json.load(std)
+           mean_HD_ctime = mean_data['HD_ctime']
+           mean_VS_sbp = mean_data['VS_sbp']
+           mean_VS_dbp = mean_data['VS_dbp']
+           std_HD_ctime = std_data['HD_ctime']
+           std_VS_sbp = std_data['VS_sbp']
+           std_VS_dbp = std_data['VS_dbp']
+           for idx, col in enumerate(columns.readlines()):
+               col = col.strip()
+               if col == 'VS_sbp':
+                   idx_VS_sbp = idx
+               elif col == 'VS_dbp':
+                   idx_VS_dbp = idx
+               elif col == 'HD_ctime':
+                   idx_HD_ctime = idx
 
-    else:
-        with open(os.path.join(base_dir, 'mean_value.json')) as mean, open(os.path.join(base_dir, 'std_value.json')) as std, open(os.path.join(base_dir, 'columns.csv')) as columns:
-            mean_data = json.load(mean)
-            std_data = json.load(std)
-            mean_HD_ctime = mean_data['HD_ctime']
-            mean_VS_sbp = mean_data['VS_sbp']
-            mean_VS_dbp = mean_data['VS_dbp']
-            std_HD_ctime = std_data['HD_ctime']
-            std_VS_sbp = std_data['VS_sbp']
-            std_VS_dbp = std_data['VS_dbp']
-            for idx, col in enumerate(columns.readlines()):
-                col = col.strip()
-                if col == 'VS_sbp':
-                    idx_VS_sbp = idx
-                elif col == 'VS_dbp':
-                    idx_VS_dbp = idx
-                elif col == 'HD_ctime':
-                    idx_HD_ctime = idx
+   c_time_list = [(data[i][:,idx_HD_ctime]*std_HD_ctime+mean_HD_ctime).astype(int) for i in range(len(data))]
+   sbp_list =[(data[i][:,idx_VS_sbp]*std_VS_sbp+mean_VS_sbp).astype(int) for i in range(len(data))]
+   map_list =[((data[i][:,idx_VS_dbp]*std_VS_dbp+mean_VS_dbp) / 3. + (data[i][:,idx_VS_sbp]*std_VS_sbp+mean_VS_sbp)* 2. / 3.).astype(int) for i in range(len(data))]
+   # 각 frame의 c_time, sbp, map를 받았음.
+   # <<<<중요>>>>> 7,12,13은 data 형태에 따라서 바꿔줘야 함
 
-    c_time_list = [(data[i][:,idx_HD_ctime]*std_HD_ctime+mean_HD_ctime).astype(int) for i in range(len(data))]
-    sbp_list =[(data[i][:,idx_VS_sbp]*std_VS_sbp+mean_VS_sbp).astype(int) for i in range(len(data))]
-    map_list =[((data[i][:,idx_VS_dbp]*std_VS_dbp+mean_VS_dbp) / 3. + (data[i][:,idx_VS_sbp]*std_VS_sbp+mean_VS_sbp)* 2. / 3.).astype(int) for i in range(len(data))]
-    # 각 frame의 c_time, sbp, map를 받았음. 
-    # <<<<중요>>>>> 7,12,13은 data 형태에 따라서 바꿔줘야 함
+   for data_idx in range(len(data)):
+       if data_idx == 1000:
+           print('{}_{}'.format(d_type, data_idx))
+       sbp_absolute_value = sbp_list[data_idx]
+       map_absolute_value = map_list[data_idx]
+       sbp_init_value = sbp_list[data_idx][0]
+       map_init_value = map_list[data_idx][0]
+       dbp_init_value = data[data_idx][0,idx_VS_dbp] * std_VS_dbp + mean_VS_dbp
+       sbp_diff = sbp_absolute_value - sbp_init_value
+       map_diff = map_list[data_idx] - map_init_value
 
-    for data_idx in range(len(data)):
-        if data_idx == 1000:
-            print('{}_{}'.format(d_type, data_idx))
-        sbp_absolute_value = sbp_list[data_idx]
-        map_absolute_value = map_list[data_idx]
-        sbp_init_value = sbp_list[data_idx][0]
-        map_init_value = map_list[data_idx][0]
-        dbp_init_value = data[data_idx][0,idx_VS_dbp] * std_VS_dbp + mean_VS_dbp
-        sbp_diff = sbp_absolute_value - sbp_init_value
-        map_diff = map_list[data_idx] - map_init_value
+       if mask:
+           real_flag = [x[0] == 1 for x in data[data_idx]]
+           temp_data_concat = np.zeros((len(sbp_diff), 10))
+       else:
+           real_flag = [1 for _ in data[data_idx]]
+           temp_data_concat = np.zeros((len(sbp_diff), 7))
 
-        if mask:
-            real_flag = [x[0] == 1 for x in data[data_idx]]
-            temp_data_concat = np.zeros((len(sbp_diff), 10))
-        else:
-            real_flag = [1 for _ in data[data_idx]]
-            temp_data_concat = np.zeros((len(sbp_diff), 5))
+       # print()
+       # print('c_time_list[{}]: '.format(data_idx), c_time_list[data_idx])
 
-        # print()
-        # print('c_time_list[{}]: '.format(data_idx), c_time_list[data_idx])
+       # print('sbp_list[{}]:'.format(data_idx), sbp_list[data_idx])
+       # print('map_list[{}]:'.format(data_idx), map_list[data_idx])
+       # print('sbp_init_value[{}]:'.format(data_idx), sbp_init_value)
+       # print('map_init_value[{}]:'.format(data_idx), map_init_value)
+       # print('sbp_diff[{}]:'.format(data_idx), sbp_diff)
+       # print('map_diff[{}]:'.format(data_idx), map_diff)
 
-        # print('sbp_list[{}]:'.format(data_idx), sbp_list[data_idx])
-        # print('map_list[{}]:'.format(data_idx), map_list[data_idx])
-        # print('sbp_init_value[{}]:'.format(data_idx), sbp_init_value)
-        # print('map_init_value[{}]:'.format(data_idx), map_init_value)
-        # print('sbp_diff[{}]:'.format(data_idx), sbp_diff)
-        # print('map_diff[{}]:'.format(data_idx), map_diff)
+       for frame_idx in range(len(data[data_idx])):
+           criterion_flag = (c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx]) # shape : [True, True, True, True, False, False, False, ....]
 
-        for frame_idx in range(len(data[data_idx])):
-            criterion_flag = (c_time_list[data_idx][frame_idx] + ntime >= c_time_list[data_idx]) & (c_time_list[data_idx][frame_idx] < c_time_list[data_idx]) # shape : [True, True, True, True, False, False, False, ....]
+           if np.sum(((sbp_absolute_value[criterion_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_sbp_exist = 1
+           else : curr_sbp_exist = 0
+           if np.sum(((map_absolute_value[criterion_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_map_exist = 1
+           else : curr_map_exist = 0
+           curr_composite = np.max([curr_sbp_exist, curr_map_exist])
 
-            if np.sum(((sbp_absolute_value[criterion_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_sbp_exist = 1
-            else : curr_sbp_exist = 0
-            if np.sum(((map_absolute_value[criterion_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_map_exist = 1
-            else : curr_map_exist = 0
+           if np.sum(((sbp_absolute_value[criterion_flag & real_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_real_sbp_exist = 1
+           else : curr_real_sbp_exist = 0
+           if np.sum(((map_absolute_value[criterion_flag & real_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_real_map_exist = 1
+           else : curr_real_map_exist = 0
 
-            if np.sum(((sbp_absolute_value[criterion_flag & real_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_real_sbp_exist = 1
-            else : curr_real_sbp_exist = 0
-            if np.sum(((map_absolute_value[criterion_flag & real_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_real_map_exist = 1
-            else : curr_real_map_exist = 0
+           if np.sum((sbp_diff[criterion_flag]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
+           else : sbp_exist = 0
+           if np.sum((map_diff[criterion_flag]<=-10).astype(int)) : map_exist = 1
+           else : map_exist = 0
+           if np.sum((sbp_absolute_value[criterion_flag]<90).astype(int)) : sbp_under_90 = 1
+           else : sbp_under_90 = 0
+           init_composite = np.max([sbp_exist, map_exist])
 
-            if np.sum((sbp_diff[criterion_flag]<=-20).astype(int)) : sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
-            else : sbp_exist = 0
-            if np.sum((map_diff[criterion_flag]<=-10).astype(int)) : map_exist = 1
-            else : map_exist = 0
-            if np.sum((sbp_absolute_value[criterion_flag]<=90).astype(int)) : sbp_under_90 = 1
-            else : sbp_under_90 = 0
+           if np.sum((sbp_diff[criterion_flag & real_flag]<=-20).astype(int)) : real_sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
+           else : real_sbp_exist = 0
+           if np.sum((map_diff[criterion_flag & real_flag]<=-10).astype(int)) : real_map_exist = 1
+           else : real_map_exist = 0
+           if np.sum((sbp_absolute_value[criterion_flag & real_flag]<90).astype(int)) : real_sbp_under_90 = 1
+           else : real_sbp_under_90 = 0
 
-            if np.sum((sbp_diff[criterion_flag & real_flag]<=-20).astype(int)) : real_sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
-            else : real_sbp_exist = 0
-            if np.sum((map_diff[criterion_flag & real_flag]<=-10).astype(int)) : real_map_exist = 1
-            else : real_map_exist = 0
-            if np.sum((sbp_absolute_value[criterion_flag & real_flag]<=90).astype(int)) : real_sbp_under_90 = 1
-            else : real_sbp_under_90 = 0
+           if frame_idx == (len(data[data_idx])-1):    # sbp_list가 각 frame의 sbp를 가져왔는데, 마지막 frame은 다음 target frame을 반영해줘야 했었음.
+               last_target_sbp = (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value ).astype(int)
+               last_target_map = ((data[data_idx][-1,-3]*std_VS_dbp + dbp_init_value) / 3. + (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value) * 2. / 3.).astype(int)
+               if last_target_sbp - sbp_init_value <= -20 : sbp_exist = 1
+               else: sbp_exist = 0
+               if last_target_map - map_init_value <= -10 : map_exist = 1
+               else: map_exist = 0
+               if last_target_sbp < -90 : sbp_under_90 = 1
+               else: sbp_under_90 = 0
+               init_composite = np.max([sbp_exist, map_exist])
 
-            if frame_idx == (len(data[data_idx])-1):    # sbp_list가 각 frame의 sbp를 가져왔는데, 마지막 frame은 다음 target frame을 반영해줘야 했었음.
-                last_target_sbp = (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value ).astype(int)
-                last_target_map = ((data[data_idx][-1,-3]*std_VS_dbp + dbp_init_value) / 3. + (data[data_idx][-1,-4]*std_VS_sbp + sbp_init_value) * 2. / 3.).astype(int)
-                if last_target_sbp - sbp_init_value <= -20 : sbp_exist = 1
-                else: sbp_exist = 0
-                if last_target_map - map_init_value <= -10 : map_exist = 1
-                else: map_exist = 0
-                if last_target_sbp <= -90 : sbp_under_90 = 1
-                else: sbp_under_90 = 0
+           if mask:
+               temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90, curr_sbp_exist, curr_map_exist, curr_real_sbp_exist, curr_real_map_exist))
+           else:
+               temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, curr_sbp_exist, curr_map_exist, init_composite, curr_composite))
 
-            if mask:
-                temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90, curr_sbp_exist, curr_map_exist, curr_real_sbp_exist, curr_real_map_exist))
-            else:
-                temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, curr_sbp_exist, curr_map_exist))
+       new_data[data_idx] = np.concatenate((new_data[data_idx], temp_data_concat), axis=1)
 
-        data[data_idx] = np.concatenate((data[data_idx], temp_data_concat), axis=1)
+   # torch.save(data, 'data/tensor_data/1227_EF_60min/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
+   return new_data
 
-    # torch.save(data, 'data/tensor_data/Interpolation_RNN_60min/New/{}_{}min.pt'.format(d_type, ntime)) # save root 잘 지정해줄 것
-
-    return data
 
 # version3 용 eval.
 def eval_rnn_classification_v3(loader, model, device, output_size, criterion, threshold=0.5, log_dir=None, epoch=None, step=0):
@@ -820,7 +832,7 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, th
             total_target = torch.cat([total_target, flattened_target], dim=0)
             total_output = torch.cat([total_output, flattened_output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
-        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, cal_roc=True)
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, composite=False, cal_roc=True)
 
         val_total = len(total_output)
 
@@ -864,113 +876,71 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, th
                                                                                         100 * val_correct3 / val_total,
                                                                                         100 * val_correct4 / val_total))
             # print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t".format(thres, 100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
-
-# TODO: Edit for batch-wise padding
-def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
-    mean_HD_ctime = 112.71313384332716
-    std_HD_ctime = 78.88638128125473
-    mean_VS_sbp = 132.28494659660691
-    mean_VS_dbp = 72.38785072807198
-    std_VS_sbp = 26.863242507719363
-    std_VS_dbp = 14.179094454260184
-
-    def eval_normal(inputs):
-        diff1 = (inputs[:,:, 0] - inputs[:,:,11]) * std_VS_sbp
-        diff1 = (diff1 < 20).byte()
-        diff2 = (inputs[:,:,1] - inputs[:,:, 12]) * std_VS_dbp
-        diff2 = (diff2 < 10).byte()
-        diff3 = inputs[:,:,11] * std_VS_sbp + mean_VS_sbp
-        diff3 = (diff3 > 90).byte()
-
-        diff = torch.stack([diff1, diff2, diff3])
-        return diff
-
-
+def eval_rnn_classification_composite(loader, model, device, output_size, criterion, threshold=0.5, log_dir=None, epoch=None, step=0):
     with torch.no_grad():
         running_loss = 0
-        total = 0
-        val_correct0, val_correct1, val_correct2 = 0,0,0
-        val_total = {'SBP':0, 'MAP':0, 'Under90':0}
+        total_output = torch.tensor([], dtype=torch.float).to(device)
+        total_target = torch.tensor([]).to(device)
 
-        total_target = {'SBP': torch.tensor([]).to(device), 'MAP': torch.tensor([]).to(device), 'Under90': torch.tensor([]).to(device)}
-        total_output = {'SBP': torch.tensor([]).to(device), 'MAP': torch.tensor([]).to(device), 'Under90': torch.tensor([]).to(device)}
+        for i, ((inputs_fix, inputs_seq), (targets, composite_targets), seq_len) in enumerate(loader):
+            inputs_fix = inputs_fix.to(device)
+            inputs_seq = inputs_seq.to(device)
+            targets = composite_targets.float().to(device)
+            output = model(inputs_fix, inputs_seq, seq_len, device) # shape : (seq, batch size, 5)
 
-        sbp_num, map_num, under90_num = 0,0,0
-        for i, (inputs, (targets, targets_real), seq_len, mask) in enumerate(loader):
-            batch_size, padded_len, feature_len = inputs.shape[0], inputs.shape[1], inputs.shape[2]
-            inputs = inputs.to(device) #(seq, batch, 146)
-            targets = targets_real.float().to(device)
-            output = model(inputs, seq_len, device) # shape : (seq, batch size, 3)
+            flattened_output = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
 
-            normal_mask = eval_normal(inputs)
-            normal_mask = normal_mask.permute(1,2,0).to(device)
-            inter_mask = mask.byte().view(padded_len,batch_size).to(device)
-            inter_mask = inter_mask.unsqueeze(-1).repeat(1,1,3)
-            final_mask = torch.mul(normal_mask, inter_mask)
+            for idx, seq in enumerate(seq_len):
+                flattened_output = torch.cat([flattened_output, output[:seq, idx, :].reshape(-1, output_size)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
 
-            sbp_output, sbp_target = torch.masked_select(output[:,:,0],final_mask[:,:,0]), torch.masked_select(targets[:,:,0], final_mask[:,:,0])
-            map_output, map_target = torch.masked_select(output[:,:,1],final_mask[:,:,1]), torch.masked_select(targets[:,:,1], final_mask[:,:,1])
-            under90_output, under90_target = torch.masked_select(output[:,:,2],final_mask[:,:,2]), torch.masked_select(targets[:,:,2], final_mask[:,:,2])
+            loss_init = criterion(flattened_output[:, 0], flattened_target[:,0])  # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+            loss_curr = criterion(flattened_output[:, 1], flattened_target[:,1])
+            loss_under90 = criterion(flattened_output[:, 2], flattened_target[:,2])
+            loss = loss_init + loss_curr + loss_under90
 
-            total_output['SBP'] = torch.cat([total_output['SBP'], sbp_output])
-            total_output['MAP'] = torch.cat([total_output['MAP'], map_output])
-            total_output['Under90'] = torch.cat([total_output['Under90'], under90_output])
-
-            total_target['SBP'] = torch.cat([total_target['SBP'], sbp_target])
-            total_target['MAP'] = torch.cat([total_target['MAP'], map_target])
-            total_target['Under90'] = torch.cat([total_target['Under90'], under90_target])
-
-            if len(sbp_target) > 0 :
-                loss_sbp = criterion(sbp_output, sbp_target)
-            else:
-                loss_sbp = torch.tensor([0])
-            if len(map_target) > 0 :
-                loss_map = criterion(map_output, map_target)
-            else:
-                loss_map = torch.tensor([0])
-            if len(under90_target) > 0:
-                loss_under90 = criterion(under90_output, under90_target)
-            else :
-                loss_under90 = torch.tensor([0])
-            loss = loss_sbp + loss_map + loss_under90
             running_loss += loss.item()
+
+            total_target = torch.cat([total_target, flattened_target], dim=0)
+            total_output = torch.cat([total_output, flattened_output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
-        # if i < 100: # 오류는 안 날텐데...
-        #     save_result_txt(pred0.unsqueeze(-1), targets[:, 0], log_dir+'/txt/', epoch, 'val_sbp')
-        #     save_result_txt(pred1.unsqueeze(-1), targets[:, 1], log_dir+'/txt/', epoch, 'val_map')
-        #     save_result_txt(pred2.unsqueeze(-1), targets[:, 2], log_dir+'/txt/', epoch, 'val_under90')
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, composite=True, cal_roc=True)
 
-        # confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, cal_roc=True) # Saved as dictionaries as datasize varies by columns
-        val_total['SBP'] = len(total_target['SBP'])
-        val_total['MAP'] = len(total_target['MAP'])
-        val_total['Under90'] = len(total_target['Under90'])
+        val_total = len(total_output)
+
         for thres in threshold:
-            pred0 = (F.sigmoid(total_output['SBP']) > thres).long()  # TODO : threshold
-            pred1 = (F.sigmoid(total_output['MAP']) > thres).long()
-            pred2 = (F.sigmoid(total_output['Under90']) > thres).long()
+            val_correct0, val_correct1, val_correct2 = 0, 0, 0
 
-            val_correct0 = (pred0 == total_target['SBP'].long()).sum().item()
-            val_correct1 = (pred1 == total_target['MAP'].long()).sum().item()
-            val_correct2 = (pred2 == total_target['Under90'].long()).sum().item()
+            pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
+            pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
+            pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
 
-            sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, total_target['SBP'], 2)
-            map_confusion_matrix, dbp_log = confusion_matrix(pred1, total_target['MAP'], 2)
-            under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_target['Under90'], 2)
-            confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
-                                         log_dir + '/{}'.format(thres),
-                                         epoch, 0, 'val', 'sbp', v3=True)
-            confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
-                                         log_dir + '/{}'.format(thres),
-                                         epoch, 0, 'val', 'map', v3=True)
+            val_correct0 += (pred0 == total_target[:,0].long()).sum().item()
+            val_correct1 += (pred1 == total_target[:,1].long()).sum().item()
+            val_correct2 += (pred2 == total_target[:,2].long()).sum().item()
+
+            init_confusion_matrix, sbp_log = confusion_matrix(pred0, total_target[:,0], 2)
+            curr_confusion_matrix, dbp_log = confusion_matrix(pred1, total_target[:, 1], 2)
+            under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_target[:, 2], 2)
+
+            confusion_matrix_save_as_img(init_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres),
+                                               epoch, step, 'val', 'Initial', v3=True)
+            confusion_matrix_save_as_img(curr_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres),
+                                               epoch, step, 'val', 'Current', v3=True)
             confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-                                         log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
-
-            print("\t Threshold : {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(
-                thres, 100 * val_correct0 / val_total['SBP'], 100 * val_correct1 / val_total['MAP'],
-                100 * val_correct2 / val_total['Under90']))
+                                               log_dir + '/{}'.format(thres), epoch, step, 'val', 'Under90', v3=True)
 
 
-def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0, cal_roc=True):
+            print("\t Threshold: {} \tAccuracy of Initial: {:.2f}%\t Current: {:.2f}%\t Under90: {:.2f}% ".format(thres, 100 * val_correct0 / val_total,
+                                                                                        100 * val_correct1 / val_total,
+                                                                                        100 * val_correct2 / val_total))
+            # print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t".format(thres, 100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+
+
+def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0, composite=True, cal_roc=True):
     '''
     mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
     data_type : Train / Validation / Test
@@ -979,7 +949,11 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     '''
     print("Making roc curve...")
     save_dir += '/auroc'
-    category = {'sbp':0, 'map':1, 'under90':2, 'sbp2':3, 'map2':4}
+    if composite:
+        category = {'Initial':0, 'Current':1, 'Under90':2}
+    else:
+        category = {'sbp':0, 'map':1, 'under90':2, 'sbp2':3, 'map2':4}
+
     for key, value in category.items():
         key_dir = save_dir + '/' + key
         if not os.path.isdir(key_dir):

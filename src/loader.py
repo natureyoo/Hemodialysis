@@ -38,13 +38,11 @@ class HD_Dataset(Dataset):
 class RNN_Dataset(Dataset):
     """
     idx : target
-    0~5 : Regression & 5/7-way classification
-    6~14: 60 minute target
-        sbp, real "  : 4, 7
-        map, real " : 5, 8
-        under90, real " : 6, 9
-        sbp from current, real " = 10, 12
-        map from current, real " = 11, 13
+    ------------------------------------------------------------------------------------------
+    0~3 : Regression, classification (SBP, DBP)
+    4~8 : 5 individual target (Initial SBP, Initial MAP, Under90, Current SBP, Current MAP)
+    9~10 : 2 composite target (Initial, Current)
+    ------------------------------------------------------------------------------------------
     """
     def __init__(self, data, type, ntime=None):
         self.ntime = ntime
@@ -59,8 +57,8 @@ class RNN_Dataset(Dataset):
         else:
             # target = self.dataset[idx][1][:,-14:]
             # x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-14]), (target[:,[4,5,6,10,11]], target[:,[7,8,9,12,13]])
-            target = self.dataset[idx][1][:,-9:]
-            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-9]), (target[:,4:], target[:,4:])
+            target = self.dataset[idx][1][:,-11:]
+            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-11]), (target[:,4:8], target[:,[9,10,6]])
         batch_seq_len = self.seq_len[idx]
         return (x, y, batch_seq_len)
 
