@@ -820,8 +820,8 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, th
             loss_sbp = criterion(flattened_output[:,0], flattened_target[:,0])
             loss_map = criterion(flattened_output[:,1], flattened_target[:,1])
             loss_under90 = criterion(flattened_output[:,2], flattened_target[:,2])
-            loss_sbp2 = criterion(output[:,3], targets[:,3])
-            loss_map2 = criterion(output[:,4], targets[:,4])
+            loss_sbp2 = criterion(flattened_output[:,3], flattened_target[:,3])
+            loss_map2 = criterion(flattened_output[:,4], flattened_target[:,4])
 
             loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
             running_loss += loss.item()

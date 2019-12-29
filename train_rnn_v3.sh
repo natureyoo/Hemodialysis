@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 BASH_FILE='./train_rnn_v3.sh'
-RESULT_DIR='composite_result'
+RESULT_DIR='final_result'
 
-python3 -W ignore ./src/run_rnn_composite.py \
+python3 -W ignore ./src/run_rnn_v3.py \
 --save_result_root=$RESULT_DIR \
 --bash_file=${BASH_FILE} \
 --only_train=False \
