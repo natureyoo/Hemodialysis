@@ -737,7 +737,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=T
            temp_data_concat = np.zeros((len(sbp_diff), 10))
        else:
            real_flag = [1 for _ in data[data_idx]]
-           temp_data_concat = np.zeros((len(sbp_diff), 7))
+           temp_data_concat = np.zeros((len(sbp_diff), 5))
 
        # print()
        # print('c_time_list[{}]: '.format(data_idx), c_time_list[data_idx])
@@ -756,7 +756,6 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=T
            else : curr_sbp_exist = 0
            if np.sum(((map_absolute_value[criterion_flag] - map_absolute_value[frame_idx]) <= -10).astype(int)) : curr_map_exist = 1
            else : curr_map_exist = 0
-           curr_composite = np.max([curr_sbp_exist, curr_map_exist])
 
            if np.sum(((sbp_absolute_value[criterion_flag & real_flag] - sbp_absolute_value[frame_idx]) <= -20).astype(int)) : curr_real_sbp_exist = 1
            else : curr_real_sbp_exist = 0
@@ -769,7 +768,6 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=T
            else : map_exist = 0
            if np.sum((sbp_absolute_value[criterion_flag]<90).astype(int)) : sbp_under_90 = 1
            else : sbp_under_90 = 0
-           init_composite = np.max([sbp_exist, map_exist])
 
            if np.sum((sbp_diff[criterion_flag & real_flag]<=-20).astype(int)) : real_sbp_exist = 1    # 초기값 대비 20 이상 떨어지는게 존재하면 1, else 0.
            else : real_sbp_exist = 0
@@ -787,12 +785,11 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=T
                else: map_exist = 0
                if last_target_sbp < -90 : sbp_under_90 = 1
                else: sbp_under_90 = 0
-               init_composite = np.max([sbp_exist, map_exist])
 
            if mask:
                temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, real_sbp_exist, real_map_exist, real_sbp_under_90, curr_sbp_exist, curr_map_exist, curr_real_sbp_exist, curr_real_map_exist))
            else:
-               temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, curr_sbp_exist, curr_map_exist, init_composite, curr_composite))
+               temp_data_concat[frame_idx] = np.array((sbp_exist, map_exist, sbp_under_90, curr_sbp_exist, curr_map_exist))
 
        new_data[data_idx] = np.concatenate((new_data[data_idx], temp_data_concat), axis=1)
 

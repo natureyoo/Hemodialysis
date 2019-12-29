@@ -16,7 +16,7 @@ import os
 
 # input_size = 36
 # input_size = 143
-input_fix_size = 109
+input_fix_size = 123
 input_seq_size = 9
 hidden_size = 256
 num_layers = 3

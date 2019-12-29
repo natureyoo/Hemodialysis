@@ -51,7 +51,7 @@ def rnn_classification(args):
 
     # input_size = 36
     # input_size = 143
-    input_fix_size = 109
+    input_fix_size = 123
     input_seq_size = 9
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
@@ -88,7 +88,7 @@ def rnn_classification(args):
     # model.load_state_dict(state['model'])
     # load###############################################
     #####################################################
-    train_data = torch.load('/home/ky/Desktop/Project/의료/data/tensor_data/1218_EF_60min/Train.pt')
+    train_data = torch.load('/home/ky/Desktop/Project/의료/tensor_data/RNN/Train.pt')
     # train_data = np.concatenate([train_data, torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Train2_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
@@ -100,26 +100,8 @@ def rnn_classification(args):
     # seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
     seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10,0)] # add HD_ntime_target
     fix_idx = [i for i in full_idx if i not in seq_idx]
-    # for i in range(len(train_data)):
-    #     train_data[i] = train_data[i][:,1:] # remove masking
-    #     train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
-    # train_data = train_data_
-    # del train_data_
 
     ori_len = len(train_data)
-    # Cut data by some rule
-
-    # train_seq_len_list = [len(x[1]) for x in train_data]
-    # print("num train data : {} --> {}".format(ori_len, len(train_data)))
-    # train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
-    # train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=loader.pad_collate)
-
-    val_data = torch.load('/home/ky/Desktop/Project/의료/data/tensor_data/1218_EF_60min/Validation.pt')
-    # val_data = val_data[:int(len(val_data) * 0.1)]
-    # full_idx = [i for i in range(len(val_data[0][0]))]
-    # seq_idx = [0] + [i + 1 for i in seq_idx] # contain mask idx
-    # fix_idx = [i for i in full_idx if i not in seq_idx and i != 136]
-
     train_data_ = []
     for i in range(len(train_data)):
         train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
@@ -131,6 +113,8 @@ def rnn_classification(args):
     train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: loader.pad_collate(batch, True))
 
+    val_data = torch.load('/home/ky/Desktop/Project/의료/tensor_data/RNN/Validation.pt')
+    # val_data = val_data[:int(len(val_data) * 0.1)]
     val_data_ = []
     for i in range(len(val_data)):
         val_data_.append([val_data[i][0,fix_idx], val_data[i][:,seq_idx]])
@@ -206,13 +190,7 @@ def rnn_classification(args):
             loss_under90 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
             loss_sbp2 = BCE_loss_with_logit(flattened_output[:,3], flattened_target[:,3])
             loss_map2 = BCE_loss_with_logit(flattened_output[:, 4], flattened_target[:, 4])
-            
-            # print('\n', F.sigmoid(flattened_target[0,0]).item(),  F.sigmoid(flattened_target[0,1]).item(),  F.sigmoid(flattened_target[0,2]).item())
 
-            # if batch_idx < 10:    # 초기 10 iteration 의 결과를 txt 파일로 저장하겠다. # TODO : v2까지의 코드라서 v3에서 shape이 잘 안 맞을 가능성 있음
-            #     utils.save_result_txt(torch.argmax(output1.permute(1,0,2), dim=2), targets[:,:, 0].permute(1,0), log_dir+'/txt/', epoch, 'Train_sbp', seq_lens=seq_len)
-            #     utils.save_result_txt(torch.argmax(output2.permute(1,0,2), dim=2), targets[:,:, 1].permute(1,0), log_dir+'/txt/', epoch, 'Train_dbp', seq_lens=seq_len)
-            
             # loss = loss_sbp + loss_map + loss_under90
             loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
 
@@ -222,9 +200,6 @@ def rnn_classification(args):
             running_loss_sbp2 = loss_sbp2.item() * (1./(batch_idx+1.)) + running_loss_sbp2 * (batch_idx/(batch_idx+1.))
             running_loss_map2 = loss_map2.item() * (1./(batch_idx+1.)) + running_loss_map2 * (batch_idx/(batch_idx+1.))
             total += len(seq_len)
-
-            # for param in model.parameters():
-            #     print(param.name, param.grad) # gradient print
 
             running_loss = loss.item() * (1./(batch_idx+1.)) + running_loss * (batch_idx/(batch_idx+1.))
 

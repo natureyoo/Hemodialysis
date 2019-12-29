@@ -426,8 +426,8 @@ class RNN_V3(nn.Module):
         output3 = self.fc_class3(outputs)
         output4 = self.fc_class4(outputs)
         output5 = self.fc_class5(outputs)
-        # return torch.cat([output1, output2, output3, output4, output5], dim=-1)
-        return torch.cat([output1, output2, output3], dim=-1)
+        return torch.cat([output1, output2, output3, output4, output5], dim=-1)
+        # return torch.cat([output1, output2, output3], dim=-1)
 
     def init_hidden(self):
         hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)

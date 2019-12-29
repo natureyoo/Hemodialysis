@@ -57,8 +57,8 @@ class RNN_Dataset(Dataset):
         else:
             # target = self.dataset[idx][1][:,-14:]
             # x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-14]), (target[:,[4,5,6,10,11]], target[:,[7,8,9,12,13]])
-            target = self.dataset[idx][1][:,-11:]
-            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-11]), (target[:,4:8], target[:,[9,10,6]])
+            target = self.dataset[idx][1][:,-9:]
+            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-9]), (target[:,4:], target[:,4:])
         batch_seq_len = self.seq_len[idx]
         return (x, y, batch_seq_len)
 
