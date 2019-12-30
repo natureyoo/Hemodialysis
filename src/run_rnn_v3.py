@@ -20,6 +20,9 @@ def parse_arg():
     parser.add_argument('--target_type', type=str, required=True)
     parser.add_argument('--model_type', type=str, required=True)
 
+    parser.add_argument('--input_fix_size', default=110, type=int)
+    parser.add_argument('--input_seq_size', default=9, type=int)
+
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default 0.001)')
     parser.add_argument('--lr_decay_rate', type=float)
     parser.add_argument('--lr_decay_epoch', default=[10,15,50,100,200])
@@ -39,6 +42,9 @@ def parse_arg():
     parser.add_argument('--valid_iter_freq', default=500, type=int)
     parser.add_argument('--init_epoch', default=0, type=int)
 
+    parser.add_argument('--load_path', default=None, type=str)
+
+
     args = parser.parse_args()
 
     print('\n{}\n'.format(args))
@@ -49,10 +55,8 @@ def parse_arg():
 
 def rnn_classification(args):
 
-    # input_size = 36
-    # input_size = 143
-    input_fix_size = 110
-    input_seq_size = 9
+    input_fix_size = args.input_fix_size
+    input_seq_size = args.input_seq_size
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
     num_epochs = args.max_epoch
@@ -83,11 +87,13 @@ def rnn_classification(args):
     
     #####################################################
     # load###############################################
-    # print('load')
-    # state = torch.load('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Dec03_115536/bs32_lr0.001_wdecay5e-06/5epoch.model')
-    # model.load_state_dict(state['model'])
+    if args.load_path is not None:
+        print('\n|| Load trained_model--> {}\n'.format(args.load_path))
+        state = torch.load(args.load_path)
+        model.load_state_dict(state['model'])
     # load###############################################
     #####################################################
+
     train_data = torch.load('../tensor_data/1230_RNN_60min/Train.pt')
     # train_data = np.concatenate([train_data, torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Train2_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
