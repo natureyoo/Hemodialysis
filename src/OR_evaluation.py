@@ -200,7 +200,6 @@ with torch.no_grad():
         Initial_composite_output, _ = torch.max(output[:,:,:2], 2, keepdim=True)
         Current_composite_output, _ = torch.max(output[:,:,3:], 2, keepdim=True)
 
-        # OR_output = torch.mean(output[:, :, :], 2, keepdim=True)
         Initial_composite_targets = Initial_composite_targets.float().to(device)
         Current_composite_targets = Current_composite_targets.float().to(device)
         Initial_composite_output = Initial_composite_output.float().to(device)
