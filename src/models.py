@@ -302,6 +302,7 @@ class RNN_V3(nn.Module):
         self.temp_logit = None
         self.temp_logit2 = None
 
+        # self.fc_fix = nn.Sequential(nn.Linear(input_fix_size, hidden_size // 16), nn.ReLU(), nn.Linear(hidden_size // 16, hidden_size // 8), nn.ReLU(), nn.Linear(hidden_size // 8, hidden_size // 4))
         self.fc_fix = nn.Sequential(nn.Linear(input_fix_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
         self.BN_before_fc_fix = nn.BatchNorm1d(input_fix_size)
         self.BN_before_fc_seq = nn.BatchNorm1d(input_seq_size)
@@ -322,7 +323,9 @@ class RNN_V3(nn.Module):
         self.layer_norm_3 = nn.LayerNorm(hidden_size)
         self.inter_fc_4 = nn.Sequential(nn.Linear(hidden_size,input_seq_size), nn.Dropout(dropout_rate), nn.ReLU(), nn.Linear(input_seq_size, input_seq_size))
 
+        # self.merge_fc = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
         self.merge_fc = nn.Sequential(nn.Linear(2 * hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
+        # self.merge_fc = nn.Sequential(nn.Linear(5 * hidden_size // 4, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
 
 
         self.fc_class1 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
@@ -340,15 +343,15 @@ class RNN_V3(nn.Module):
             # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
             nn.Linear(hidden_size, 1))
 
-        # self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
-        #     nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     nn.Linear(hidden_size, 1))
-        #
-        # self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
-        #     nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
-        #     nn.Linear(hidden_size, 1))
+        self.fc_class4 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+
+        self.fc_class5 = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
             
         for m in [self.inter_fc_1, self.inter_fc_2, self.inter_fc_3, self.fc_fix] :
         # for m in [self.inter_fc_1, self.fc_fix] :
@@ -416,6 +419,7 @@ class RNN_V3(nn.Module):
             h4 = self.gru_module_4((h_prop+X_seq[i]), h4)
             h_prop = h4
             h_prop = self.merge_fc(torch.cat((h_fix, h_prop), 1))
+            # h_prop = self.merge_fc(h_prop)
             h_prop = h_prop.float()
             outputs.append(h_prop)
 
@@ -424,10 +428,10 @@ class RNN_V3(nn.Module):
         output1 = self.fc_class1(outputs)
         output2 = self.fc_class2(outputs)
         output3 = self.fc_class3(outputs)
-        # output4 = self.fc_class4(outputs)
-        # output5 = self.fc_class5(outputs)
-        # return torch.cat([output1, output2, output3, output4, output5], dim=-1)
-        return torch.cat([output1, output2, output3], dim=-1)
+        output4 = self.fc_class4(outputs)
+        output5 = self.fc_class5(outputs)
+        return torch.cat([output1, output2, output3, output4, output5], dim=-1)
+        # return torch.cat([output1, output2, output3], dim=-1)
 
     def init_hidden(self):
         hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)

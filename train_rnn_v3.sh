@@ -3,6 +3,7 @@
 BASH_FILE='./train_rnn_v3.sh'
 RESULT_DIR='result'
 
+#python3 -W ignore ./src/run_rnn_v3.py \
 python3 -W ignore ./src/run_rnn_v3.py \
 --save_result_root=$RESULT_DIR \
 --bash_file=${BASH_FILE} \
@@ -14,7 +15,7 @@ python3 -W ignore ./src/run_rnn_v3.py \
 --lr=0.01 \
 --lr_decay_rate=0.1 \
 --weight_decay=5e-6 \
---max_epoch=1000 \
+--max_epoch=15 \
 --hidden_size=256 \
 --rnn_hidden_layers 3 \
 --dropout_rate 0.1 \

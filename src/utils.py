@@ -146,8 +146,8 @@ def eval_rnn_regression(model, loader, device, data_type, output_size, criterion
         raw_sbp_loss = 0
         raw_dbp_loss = 0
 
-        total_output = torch.tensor([]).to(device)
-        total_target = torch.tensor([]).to(device)
+        confidences = torch.tensor([]).to(device)
+        targets = torch.tensor([]).to(device)
 
         for i, (inputs, targets, seq_len) in enumerate(loader):
             inputs = inputs.permute(1,0,2).to(device)
@@ -164,8 +164,8 @@ def eval_rnn_regression(model, loader, device, data_type, output_size, criterion
                 flattened_target = torch.cat((flattened_target, targets[:seq,idx,:].view(-1,output_size)), dim=0)
 
             if is_snapshot_epoch:
-                total_output = torch.cat([total_output, flattened_output], dim=0)
-                total_target = torch.cat([total_target, flattened_target], dim=0)
+                confidences = torch.cat([confidences, flattened_output], dim=0)
+                targets = torch.cat([targets, flattened_target], dim=0)
 
             sbp_loss = criterion(flattened_target[:, 0], flattened_output[:, 0])
             dbp_loss = criterion(flattened_target[:, 1], flattened_output[:, 1])
@@ -178,12 +178,12 @@ def eval_rnn_regression(model, loader, device, data_type, output_size, criterion
         print("Validation, SBP_Loss: {:.4f} DBP_Loss: {:.4f}".format(sbp_running_loss / total, sbp_running_loss / total))
 
         if is_snapshot_epoch:
-            total_sub = total_output - total_target
+            total_sub = confidences - targets
             raw_sbp_loss = torch.sum(abs(total_sub[:,0]))
             raw_dbp_loss = torch.sum(abs(total_sub[:,1]))
 
             sample_idx = np.random.choice(range(total), size=50, replace=False)
-            sample_output, sample_target = un_normalize(total_output[sample_idx, :], total_target[sample_idx, :], 'RNN', device)
+            sample_output, sample_target = un_normalize(confidences[sample_idx, :], targets[sample_idx, :], 'RNN', device)
 
             ax, plt = save_plot(sample_output[:,0], sample_target[:,0], save_result_root, epoch + 1, data_type, 'SBP')
             plt.savefig(save_result_root + '/result/' + 'sbp_{}epoch_{}_{}loss.png'.format(epoch + 1, data_type, raw_sbp_loss / total), dpi=300)
@@ -394,13 +394,13 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
     with torch.no_grad():
         running_loss = 0
         total = 0
-        val_correct1 = 0
-        val_correct2 = 0
-        val_total = 0
+        correct1 = 0
+        correct2 = 0
+        test_total = 0
 
-        total_output1 = torch.tensor([], dtype=torch.long).to(device)
-        total_output2 = torch.tensor([], dtype=torch.long).to(device)
-        total_target = torch.tensor([]).to(device)
+        confidences1 = torch.tensor([], dtype=torch.long).to(device)
+        confidences2 = torch.tensor([], dtype=torch.long).to(device)
+        targets = torch.tensor([]).to(device)
 
         # accum_test_dict = dict()    # 이 주석들은 def test_one_hour 를 위한 부분
         # accum_test_dict['tp'] = 0   # 가장 최초의 classification으로 학습 후, 1시간 안에 문제가 발생하는지를 체크하려고 만든 것
@@ -439,13 +439,13 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
 
             _, pred1 = torch.max(flattened_output1, 1)
             _, pred2 = torch.max(flattened_output2, 1)
-            val_correct1 += (pred1 == flattened_target[:, 0].long()).sum().item()
-            val_correct2 += (pred2 == flattened_target[:, 1].long()).sum().item()
-            val_total += len(pred1)
+            correct1 += (pred1 == flattened_target[:, 0].long()).sum().item()
+            correct2 += (pred2 == flattened_target[:, 1].long()).sum().item()
+            test_total += len(pred1)
 
-            total_output1 = torch.cat([total_output1, pred1], dim=0)
-            total_output2 = torch.cat([total_output2, pred2], dim=0)
-            total_target = torch.cat([total_target, flattened_target], dim=0)
+            confidences1 = torch.cat([confidences1, pred1], dim=0)
+            confidences2 = torch.cat([confidences2, pred2], dim=0)
+            targets = torch.cat([targets, flattened_target], dim=0)
 
             if i < 100:
                 save_result_txt(torch.argmax(output1.permute(1,0,2), dim=2), targets[:,:, 0].permute(1,0), log_dir+'/txt/', epoch, 'val_sbp', seq_lens=seq_len)
@@ -453,9 +453,9 @@ def eval_rnn_classification(loader, model, device, output_size, criterion1, crit
         # print(accum_test_dict)
 
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i), end=' ')
-        print("\tAccuracy of Sbp : {:.2f}% Dbp : {:.2f}%".format(100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+        print("\tAccuracy of Sbp : {:.2f}% Dbp : {:.2f}%".format(100 * correct1 / test_total, 100 * correct2 / test_total))
 
-    return running_loss/i, i, total_output1, total_output2, total_target, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total
+    return running_loss/i, i, confidences1, confidences2, targets, 100 * correct1 / test_total, 100 * correct2 / test_total
 
 
 # v3 : 세 기준에 의한 binary classification
@@ -478,7 +478,7 @@ def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_ty
     matrix = np.transpose(matrix)
 
 
-    df_cm = pd.DataFrame(matrix.astype(int), index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
+    df_cm = pd.DataFrame(np.array(matrix, dtype=int), index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
     plt.figure(figsize = (9,7))
     ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=10000, fmt="d", annot_kws={"size": 9})
     ax.set_title('{}_{}epoch_{}iter_count'.format(name, epoch, iteration))
@@ -789,7 +789,7 @@ def data_modify_same_ntime(data, ntime=60, d_type='Train', base_dir=None, mask=T
     return data
 
 # version3 용 eval.
-def eval_rnn_classification_v3(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None, step=0):
+def eval_rnn_classification_v3(t, loader, model, device, output_size, criterion, threshold=0.5, log_dir=None, epoch=None, step=0):
     with torch.no_grad():
         running_loss = 0
         total_output = torch.tensor([], dtype=torch.float).to(device)
@@ -811,16 +811,16 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             loss_sbp = criterion(flattened_output[:,0], flattened_target[:,0])
             loss_map = criterion(flattened_output[:,1], flattened_target[:,1])
             loss_under90 = criterion(flattened_output[:,2], flattened_target[:,2])
-            # loss_sbp2 = criterion(output[:,3], targets[:,3])
-            # loss_map2 = criterion(output[:,4], targets[:,4])
+            loss_sbp2 = criterion(flattened_output[:,3], flattened_target[:,3])
+            loss_map2 = criterion(flattened_output[:,4], flattened_target[:,4])
 
-            loss = loss_sbp + loss_map + loss_under90
+            loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
             running_loss += loss.item()
 
             total_target = torch.cat([total_target, flattened_target], dim=0)
             total_output = torch.cat([total_output, flattened_output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
-        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step, cal_roc=True)
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, t, log_dir, epoch, step, cal_roc=True)
 
         val_total = len(total_output)
 
@@ -830,40 +830,40 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, nu
             pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
             pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
             pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
-            # pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
-            # pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
+            pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
+            pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
 
             val_correct0 += (pred0 == total_target[:,0].long()).sum().item()
             val_correct1 += (pred1 == total_target[:,1].long()).sum().item()
             val_correct2 += (pred2 == total_target[:,2].long()).sum().item()
-            # val_correct3 += (pred3 == total_target[:,3].long()).sum().item()
-            # val_correct4 += (pred4 == total_target[:,4].long()).sum().item()
+            val_correct3 += (pred3 == total_target[:,3].long()).sum().item()
+            val_correct4 += (pred4 == total_target[:,4].long()).sum().item()
 
             sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, total_target[:,0], 2)
             map_confusion_matrix, dbp_log = confusion_matrix(pred1, total_target[:, 1], 2)
             under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_target[:, 2], 2)
-            # sbp2_confusion_matrix, dbp_log = confusion_matrix(pred3, total_target[:, 3], 2)
-            # map2_confusion_matrix, dbp_log = confusion_matrix(pred4, total_target[:, 4], 2)
+            sbp2_confusion_matrix, dbp_log = confusion_matrix(pred3, total_target[:, 3], 2)
+            map2_confusion_matrix, dbp_log = confusion_matrix(pred4, total_target[:, 4], 2)
             confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
                                                log_dir + '/{}'.format(thres),
-                                               epoch, step, 'val', 'sbp', v3=True)
+                                               epoch, step, t, 'sbp', v3=True)
             confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
                                                log_dir + '/{}'.format(thres),
-                                               epoch, step, 'val', 'map', v3=True)
+                                               epoch, step, t, 'map', v3=True)
             confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-                                               log_dir + '/{}'.format(thres), epoch, step, 'val', 'under90', v3=True)
-            # confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
-            #                                    log_dir + '/{}'.format(thres), epoch, step, 'val', 'sbp2', v3=True)
-            # confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
-            #                                    log_dir + '/{}'.format(thres), epoch, step, 'val', 'map2', v3=True)
+                                               log_dir + '/{}'.format(thres), epoch, step, t, 'under90', v3=True)
+            confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, t, 'sbp2', v3=True)
+            confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, t, 'map2', v3=True)
 
 
-            # print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(thres, 100 * val_correct0 / val_total,
-            #                                                                             100 * val_correct1 / val_total,
-            #                                                                             100 * val_correct2 / val_total,
-            #                                                                             100 * val_correct3 / val_total,
-            #                                                                             100 * val_correct4 / val_total))
-            print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t".format(thres, 100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+            print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(thres, 100 * val_correct0 / val_total,
+                                                                                        100 * val_correct1 / val_total,
+                                                                                        100 * val_correct2 / val_total,
+                                                                                        100 * val_correct3 / val_total,
+                                                                                        100 * val_correct4 / val_total))
+            # print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t".format(thres, 100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
 
 # TODO: Edit for batch-wise padding
 def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion, num_class1, num_class2, threshold=0.5, log_dir=None, epoch=None):
@@ -889,11 +889,11 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
     with torch.no_grad():
         running_loss = 0
         total = 0
-        val_correct0, val_correct1, val_correct2 = 0,0,0
-        val_total = {'SBP':0, 'MAP':0, 'Under90':0}
+        correct0, correct1, correct2 = 0,0,0
+        test_total = {'SBP':0, 'MAP':0, 'Under90':0}
 
-        total_target = {'SBP': torch.tensor([]).to(device), 'MAP': torch.tensor([]).to(device), 'Under90': torch.tensor([]).to(device)}
-        total_output = {'SBP': torch.tensor([]).to(device), 'MAP': torch.tensor([]).to(device), 'Under90': torch.tensor([]).to(device)}
+        targets = {'SBP': torch.tensor([]).to(device), 'MAP': torch.tensor([]).to(device), 'Under90': torch.tensor([]).to(device)}
+        confidences = {'SBP': torch.tensor([]).to(device), 'MAP': torch.tensor([]).to(device), 'Under90': torch.tensor([]).to(device)}
 
         sbp_num, map_num, under90_num = 0,0,0
         for i, (inputs, (targets, targets_real), seq_len, mask) in enumerate(loader):
@@ -912,13 +912,13 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
             map_output, map_target = torch.masked_select(output[:,:,1],final_mask[:,:,1]), torch.masked_select(targets[:,:,1], final_mask[:,:,1])
             under90_output, under90_target = torch.masked_select(output[:,:,2],final_mask[:,:,2]), torch.masked_select(targets[:,:,2], final_mask[:,:,2])
 
-            total_output['SBP'] = torch.cat([total_output['SBP'], sbp_output])
-            total_output['MAP'] = torch.cat([total_output['MAP'], map_output])
-            total_output['Under90'] = torch.cat([total_output['Under90'], under90_output])
+            confidences['SBP'] = torch.cat([confidences['SBP'], sbp_output])
+            confidences['MAP'] = torch.cat([confidences['MAP'], map_output])
+            confidences['Under90'] = torch.cat([confidences['Under90'], under90_output])
 
-            total_target['SBP'] = torch.cat([total_target['SBP'], sbp_target])
-            total_target['MAP'] = torch.cat([total_target['MAP'], map_target])
-            total_target['Under90'] = torch.cat([total_target['Under90'], under90_target])
+            targets['SBP'] = torch.cat([targets['SBP'], sbp_target])
+            targets['MAP'] = torch.cat([targets['MAP'], map_target])
+            targets['Under90'] = torch.cat([targets['Under90'], under90_target])
 
             if len(sbp_target) > 0 :
                 loss_sbp = criterion(sbp_output, sbp_target)
@@ -940,22 +940,22 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
         #     save_result_txt(pred1.unsqueeze(-1), targets[:, 1], log_dir+'/txt/', epoch, 'val_map')
         #     save_result_txt(pred2.unsqueeze(-1), targets[:, 2], log_dir+'/txt/', epoch, 'val_under90')
 
-        # confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, cal_roc=True) # Saved as dictionaries as datasize varies by columns
-        val_total['SBP'] = len(total_target['SBP'])
-        val_total['MAP'] = len(total_target['MAP'])
-        val_total['Under90'] = len(total_target['Under90'])
+        # confidence_save_and_cal_auroc(F.sigmoid(confidences), targets, 'Validation', log_dir, epoch, cal_roc=True) # Saved as dictionaries as datasize varies by columns
+        test_total['SBP'] = len(targets['SBP'])
+        test_total['MAP'] = len(targets['MAP'])
+        test_total['Under90'] = len(targets['Under90'])
         for thres in threshold:
-            pred0 = (F.sigmoid(total_output['SBP']) > thres).long()  # TODO : threshold
-            pred1 = (F.sigmoid(total_output['MAP']) > thres).long()
-            pred2 = (F.sigmoid(total_output['Under90']) > thres).long()
+            pred0 = (F.sigmoid(confidences['SBP']) > thres).long()  # TODO : threshold
+            pred1 = (F.sigmoid(confidences['MAP']) > thres).long()
+            pred2 = (F.sigmoid(confidences['Under90']) > thres).long()
 
-            val_correct0 = (pred0 == total_target['SBP'].long()).sum().item()
-            val_correct1 = (pred1 == total_target['MAP'].long()).sum().item()
-            val_correct2 = (pred2 == total_target['Under90'].long()).sum().item()
+            correct0 = (pred0 == targets['SBP'].long()).sum().item()
+            correct1 = (pred1 == targets['MAP'].long()).sum().item()
+            correct2 = (pred2 == targets['Under90'].long()).sum().item()
 
-            sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, total_target['SBP'], 2)
-            map_confusion_matrix, dbp_log = confusion_matrix(pred1, total_target['MAP'], 2)
-            under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_target['Under90'], 2)
+            sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, targets['SBP'], 2)
+            map_confusion_matrix, dbp_log = confusion_matrix(pred1, targets['MAP'], 2)
+            under90_confusion_matrix, dbp_log = confusion_matrix(pred2, targets['Under90'], 2)
             confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
                                          log_dir + '/{}'.format(thres),
                                          epoch, 0, 'val', 'sbp', v3=True)
@@ -966,8 +966,8 @@ def eval_rnn_classification_v3_m2(loader, model, device, output_size, criterion,
                                          log_dir + '/{}'.format(thres), epoch, 0, 'val', 'under90', v3=True)
 
             print("\t Threshold : {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}%".format(
-                thres, 100 * val_correct0 / val_total['SBP'], 100 * val_correct1 / val_total['MAP'],
-                100 * val_correct2 / val_total['Under90']))
+                thres, 100 * correct0 / test_total['SBP'], 100 * correct1 / test_total['MAP'],
+                100 * correct2 / test_total['Under90']))
 
 
 def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0, cal_roc=True):
@@ -979,7 +979,7 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     '''
     print("Making roc curve...")
     save_dir += '/auroc'
-    category = {'sbp':0, 'map':1, 'under90':2}
+    category = {'sbp':0, 'map':1, 'under90':2, 'sbp2':3, 'map2':4}
     for key, value in category.items():
         key_dir = save_dir + '/' + key
         if not os.path.isdir(key_dir):
@@ -1046,13 +1046,61 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
     plt.close("all")
     return auroc
 
-    
+# version3 용 eval.
+def eval_ensemble(files, threshold=[0.1, 0.3, 0.5], log_dir=None, epoch=None, step=0):
 
-# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/','map', 'Validation', 0)
+    total_confidences = []
+    total_targets = []
+    item_list = ['sbp', 'map', 'under90', 'sbp2', 'map2']
+    for item in item_list:
+        for f in files:
+            result = np.loadtxt('{}/bs32_lr0.01_wdecay5e-06/auroc/{}/confidence_14_0_Test_{}.txt'.format(f, item, item), delimiter='\t', dtype=float)
+            print('{} {} {} {}'.format(item, f.split('/')[-1], len(result), sum(result[:, 1])))
+            try:
+                confidences = confidences + result[:, 0]
+            except:
+                confidences = result[:, 0]
+                targets = result[:, 1]
+        confidences = confidences / len(files)
+        total_confidences.append(confidences)
+        total_targets.append(targets)
 
-# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/','sbp', 'Validation', 0)
+    total_confidences = np.asarray(total_confidences).transpose()
+    total_targets = np.asarray(total_targets).transpose()
 
-# roc_curve_plot('/home/lhj/code/medical_codes/Hemodialysis/result/rnn_v3/Classification/Untitled Folder 2/',
-#     'under90', 'Validation', 0)
-# exit()
+    confidence_save_and_cal_auroc(total_confidences, total_targets, 'Test', log_dir, 0, 0, cal_roc=True)
 
+    test_total = len(confidences)
+
+    for thres in threshold:
+        correct0, correct1, correct2, correct3, correct4 = 0, 0, 0, 0, 0
+
+        pred0 = (total_confidences[:, 0] > thres) * 1
+        pred1 = (total_confidences[:, 1] > thres) * 1
+        pred2 = (total_confidences[:, 2] > thres) * 1
+        pred3 = (total_confidences[:, 3] > thres) * 1
+        pred4 = (total_confidences[:, 4] > thres) * 1
+
+        correct0 += (pred0 == total_targets[:, 0]).sum()
+        correct1 += (pred1 == total_targets[:, 1]).sum()
+        correct2 += (pred2 == total_targets[:, 2]).sum()
+        correct3 += (pred3 == total_targets[:, 3]).sum()
+        correct4 += (pred4 == total_targets[:, 4]).sum()
+
+        sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, total_targets[:, 0], 2)
+        map_confusion_matrix, dbp_log = confusion_matrix(pred1, total_targets[:, 1], 2)
+        under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_targets[:, 2], 2)
+        sbp2_confusion_matrix, dbp_log = confusion_matrix(pred3, total_targets[:, 3], 2)
+        map2_confusion_matrix, dbp_log = confusion_matrix(pred4, total_targets[:, 4], 2)
+        confusion_matrix_save_as_img(sbp_confusion_matrix, log_dir + '/{}'.format(thres), 0, 0, 'test', 'sbp', v3=True)
+        confusion_matrix_save_as_img(map_confusion_matrix, log_dir + '/{}'.format(thres), 0, 0, 'test', 'map', v3=True)
+        confusion_matrix_save_as_img(under90_confusion_matrix, log_dir + '/{}'.format(thres), 0, 0, 'test', 'under90', v3=True)
+        confusion_matrix_save_as_img(sbp2_confusion_matrix, log_dir + '/{}'.format(thres), 0, 0, 'test', 'sbp2', v3=True)
+        confusion_matrix_save_as_img(map2_confusion_matrix, log_dir + '/{}'.format(thres), 0, 0, 'test', 'map2', v3=True)
+
+        print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(
+                thres, 100 * correct0 / test_total,
+                100 * correct1 / test_total,
+                100 * correct2 / test_total,
+                100 * correct3 / test_total,
+                100 * correct4 / test_total))

@@ -48,8 +48,7 @@ def parse_arg():
 
 
 
-def rnn_classification(args):
-
+def evaluate_ensemble(args):
     # input_size = 36
     # input_size = 143
     input_fix_size = 109
@@ -57,7 +56,6 @@ def rnn_classification(args):
     input_seq_size = 9
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
-    num_epochs = args.max_epoch
     output_size = 5
     num_class1 = 1
     num_class2 = 1
@@ -66,12 +64,12 @@ def rnn_classification(args):
     dropout_rate = args.dropout_rate
     learning_rate = args.lr
     w_decay = args.weight_decay
-    time = str(datetime.now())[:16].replace(' ', '_')
     task_type = args.target_type
+    model_file_list = args.model_file_list
 
-    log_dir = '{}/bs{}_lr{}_wdecay{}'.format(args.save_result_root, batch_size, learning_rate, w_decay)
+    log_dir = '{}/ensemble'.format(args.save_result_root)
     utils.make_dir(log_dir)
-    writer = SummaryWriter(log_dir)
+    # writer = SummaryWriter(log_dir)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     if args.model_type == 'rnn':
         model = RNN(input_size, hidden_size, num_layers, output_size, batch_size, dropout_rate, task_type).to(device)
@@ -82,98 +80,45 @@ def rnn_classification(args):
     else:
         print('model err')
         assert()
-    
-    #####################################################
-    # load###############################################
-    # print('load')
-    # state = torch.load('/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification/Dec18_222003/bs32_lr0.01_wdecay5e-06/12epoch.model')
-    # model.load_state_dict(state['model'])
-    # load###############################################
-    #####################################################
-    train_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/1218_EF_60min/Train.pt')
-    # train_data = np.concatenate([train_data, torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Train2_60min.pt')], axis=0)
-    # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
-    # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
-    # train_data = train_data[:int(len(train_data)*0.1)]              # using part of data
 
+    ################################################# train data load #################################################
+    test_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/1218_EF_60min/Test.pt')
 
     # feature selection, manually.
-    full_idx = [i for i in range(len(train_data[0][0]))]
-    # seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
+    full_idx = [i for i in range(len(test_data[0][0]))]
     seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10,0)] # add HD_ntime_target
     # fix_idx = [0, 1]
     fix_idx = [i for i in full_idx if i not in seq_idx]
-    # for i in range(len(train_data)):
-    #     train_data[i] = train_data[i][:,1:] # remove masking
-    #     train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
-    # train_data = train_data_
-    # del train_data_
+    ori_len = len(test_data)
 
-    ori_len = len(train_data)
-    # Cut data by some rule
+    test_data_ = []
+    for i in range(len(test_data)):
+        test_data_.append([test_data[i][0,fix_idx], test_data[i][:,seq_idx]])
+    test_data = test_data_
+    del test_data_
 
-    # train_seq_len_list = [len(x[1]) for x in train_data]
-    # print("num train data : {} --> {}".format(ori_len, len(train_data)))
-    # train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
-    # train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=loader.pad_collate)
+    test_seq_len_list = [len(x[1]) for x in test_data]
+    print("num test data : {} --> {}".format(ori_len, len(test_data)))
+    test_data = loader.RNN_Dataset((test_data, test_seq_len_list), type=task_type, ntime=60)
+    test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: loader.pad_collate(batch, True))
 
-    # val_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/1218_EF_60min/Test.pt')
-    val_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/1218_EF_60min/Validation.pt')
-    # val_data = val_data[:int(len(val_data) * 0.1)]
-    # full_idx = [i for i in range(len(val_data[0][0]))]
-    # seq_idx = [0] + [i + 1 for i in seq_idx] # contain mask idx
-    # fix_idx = [i for i in full_idx if i not in seq_idx and i != 136]
-
-    train_data_ = []
-    for i in range(len(train_data)):
-        train_data_.append([train_data[i][0,fix_idx], train_data[i][:,seq_idx]])
-    train_data = train_data_
-    del train_data_
-
-    train_seq_len_list = [len(x[1]) for x in train_data]
-    print("num train data : {} --> {}".format(ori_len, len(train_data)))
-    train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
-    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: loader.pad_collate(batch, True))
-
-    val_data_ = []
-    for i in range(len(val_data)):
-        val_data_.append([val_data[i][0,fix_idx], val_data[i][:,seq_idx]])
-    val_data = val_data_
-    del val_data_
-
-    val_seq_len_list = [len(x[1]) for x in val_data]
-    val_data = loader.RNN_Dataset((val_data, val_seq_len_list), type=task_type, ntime=60)
-    val_loader = DataLoader(dataset=val_data, batch_size=64, shuffle=False,
-                            collate_fn=lambda batch: loader.pad_collate(batch, True))
+    #####################################################
+    # load###############################################
+    # print('load')
+    state = torch.load(load_file_name)
+    model_list[idx].load_state_dict(state['model'])
+    # load###############################################
+    #####################################################
+    for model in model_list:
+        model.eval()
 
     BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
 
-    if args.optim == 'SGD':
-        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=w_decay, momentum=0.9)
-        # , momentum=0.9
-    elif args.optim == 'Adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999), weight_decay=w_decay)
-    elif args.optim == 'RMSProp':
-        optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
-    else:
-        print('optim error')
-        assert()
+    print("Starting Evaluating...")
 
-    print("Starting training...")
-    total_step = len(train_loader)
-    for epoch in range(args.init_epoch, num_epochs):
-        if epoch in args.lr_decay_epoch:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] *= args.lr_decay_rate
-                print('lr : {:.8f} --> {:.8f}'.format(param_group['lr']/args.lr_decay_rate, param_group['lr']))
-        
-        # ##################################
-        # # eval ###########################
         threshold = [0.1, 0.3, 0.5]
-        model.eval()
-        criterion = BCE_loss_with_logit
-        if epoch > 0:
-            utils.eval_rnn_classification_v3('Validation', val_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch)
+
+        utils.eval_rnn_classification_v3(val_loader, model_list, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch)
         # 저장 : 매 epoch마다 하는데, 특정 epoch마다 하게 바꾸려면, epoch % args.print_freq == 0 등으로 추가
         state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
         torch.save(state, log_dir+'/{}epoch.model'.format(epoch))
@@ -246,11 +191,12 @@ def rnn_classification(args):
             torch.nn.utils.clip_grad_norm(model.parameters(), 3)
             optimizer.step()
 
-            # if (batch_idx + 1) % args.valid_iter_freq == 0:
-            #     threshold = [0.1, 0.3, 0.5]
-            #     model.eval()
-            #     criterion = BCE_loss_with_logit
-            #     utils.eval_rnn_classification_v3('Validation', val_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch, step=batch_idx+1)
+            if (batch_idx + 1) % args.valid_iter_freq == 0:
+                threshold = [0.1, 0.3, 0.5]
+                model.eval()
+                criterion = BCE_loss_with_logit
+                utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch, step=batch_idx+1)
+            # if (batch_idx + 1) % args.train_print_freq == 0:
             if epoch < 5:       # 5 epoch 까지는 실시간으로 loss & acc를 보겠다.
                 sys.stdout.write('\r')
                 sys.stdout.write('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f} SBP2 l: {:.4f} MAP2 l: {:.4f} \t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f} SBP2 acc.: {:.4f}  MAP2 acc.: {:.4}'
@@ -273,47 +219,32 @@ def rnn_classification(args):
                             train_correct_map / train_total, train_correct_under_90 / train_total,
                             train_correct_sbp2 / train_total, train_correct_map2 / train_total))
 
-    del train_data, val_data
 
     model.eval()
 
     ####################################################################3
-    TODO : test
-    print("\n\n\n ***Start testing***")
-    test_data = torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/1218_EF_60min/Test.pt')
-    test_data_ = []
-    for i in range(len(test_data)):
-        test_data_.append([test_data[i][0, fix_idx], test_data[i][:, seq_idx]])
-    test_data = test_data_
-    del test_data_
-
-    test_seq_len_list = [len(x[1]) for x in test_data]
-    test_data = loader.RNN_Dataset((test_data, test_seq_len_list), type=task_type, ntime=60)
-    test_loader = DataLoader(dataset=test_data, batch_size=64, shuffle=False,
-                            collate_fn=lambda batch: loader.pad_collate(batch, True))
-
-    utils.eval_rnn_classification_v3('Test', test_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch)
+    # TODO : test 
+    # print("\n\n\n ***Start testing***")
+    # test_data = torch.load('../data/tensor_data/1210_EF_60min/Test.pt')
+    # full_idx = [i for i in range(len(val_data[0][0]))]
+    # seq_idx = [0] + [i + 1 for i in seq_idx] # contain mask idx
+    # fix_idx = [i for i in full_idx if i not in seq_idx and i != 136]
+    # val_data_ = []
+    # for i in range(len(val_data)):
+    #     val_data_.append([val_data[i][0,fix_idx], val_data[i][:,seq_idx]])
+    # val_data = val_data_
+    # del val_data_
+    #
+    # val_seq_len_list = [len(x) for x in val_data]
+    # val_dataset = loader.RNN_Val_Dataset((val_data, val_seq_len_list), type=task_type, ntime=60)
+    # val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
+    #                         collate_fn=lambda batch: loader.pad_collate(batch, True))
+    # test_loss, test_size, _, _, _, sbp_accuracy, dbp_accuracy = utils.eval_rnn_classification(test_loader, model, device, output_size, criterion1, criterion2, num_class1, num_class2)
+    # print('test loss : {:.4f}'.format(test_loss))
+    # writer.add_scalar('Loss/Test', test_loss/test_size, 1)
     ####################################################################3
     ####################################################################3
 
-
-# def main():
-#     args = parse_arg()
-#     args.save_result_root += '/' + args.model_type + '/' + args.target_type
-#
-#     #################### set random seed ###########################3
-#     torch.manual_seed(int(datetime.now().timestamp()))
-#     torch.cuda.manual_seed_all(int(datetime.now().timestamp()))
-#
-#     for _ in range(10):
-#         dateTimeObj = datetime.now()
-#         timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
-#         args.save_result_root += '/' + timestampStr
-#         print('\n|| save root : {}\n\n'.format(args.save_result_root))
-#         utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
-#         utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
-#
-#         rnn_classification(args)
 
 def main():
     args = parse_arg()
@@ -321,13 +252,15 @@ def main():
     dateTimeObj = datetime.now()
     timestampStr = dateTimeObj.strftime("%b%d_%H%M%S/")
     args.save_result_root += '/' + timestampStr
-    threshold = [0.1, 0.3, 0.5]
+    print('\n|| save root : {}\n\n'.format(args.save_result_root))
+    utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
+    utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
+
     base_path = '/home/jayeon/Documents/code/Hemodialysis/result/rnn_v3/Classification'
-    files = [os.path.join(base_path, f) for f in os.listdir(base_path) if f.split('_')[0] == 'Dec27' or f.split('_')[0] == 'Dec26' and f.split('_')[1] > '222000']
-    log_dir = '{}/ensemble'.format(args.save_result_root)
-    utils.eval_ensemble(files, threshold, log_dir)
+    model_files = ['1219_ky_final_model/14epoch.model', 'Dec18_222028/bs32_lr0.01_wdecay5e-06/12epoch.model']
+    for file in model_files:
+        args.load_file_name = os.path.join(base_path, file)
+        rnn_classification(args)
 
 if __name__ == '__main__':
     main()
-
-
