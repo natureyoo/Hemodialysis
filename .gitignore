@@ -10,12 +10,10 @@ tensor_data/
 ### result ###
 result/
 data/
-result/
-tensor_data/
+*result*/*
 
-### result ###
-result/
-result*/*
+### trained_models ###
+trained_models/
 
 ### Linux ###
 *~

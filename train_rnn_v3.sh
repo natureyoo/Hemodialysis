@@ -11,6 +11,9 @@ python3 -W ignore ./src/run_rnn_v3.py \
 --model_type='rnn_v3' \
 --optim='SGD' \
 \
+--input_fix_size=110 \
+--input_seq_size=9 \
+\
 --lr=0.01 \
 --lr_decay_rate=0.1 \
 --weight_decay=5e-6 \
@@ -23,4 +26,5 @@ python3 -W ignore ./src/run_rnn_v3.py \
 --snapshot_epoch_freq=1 \
 --valid_iter_freq=5000 \
 --train_print_freq=50 \
---init_epoch=0
+--init_epoch=0 \
+--load_path='./trained_models/12epoch_fix_input_size_110.model' \
