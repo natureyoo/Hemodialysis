@@ -156,7 +156,7 @@ def rnn_classification(args):
                 param_group['lr'] *= args.lr_decay_rate
                 print('lr : {:.8f} --> {:.8f}'.format(param_group['lr']/args.lr_decay_rate, param_group['lr']))
         
-        # ####################fix_idx##############
+        # ##################################
         # # eval ###########################
         threshold = [0.1, 0.3, 0.5]
         model.eval()
