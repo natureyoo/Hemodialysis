@@ -947,7 +947,7 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     print("Making roc curve...")
     save_dir += '/auroc'
     if composite:
-        category = {'Initial':0, 'Current':1, 'Under90':2}
+        category = {'Initial':0, 'Present':1, 'Under90':2}
     else:
         category = {'sbp':0, 'map':1, 'under90':2, 'sbp2':3, 'map2':4}
 
@@ -963,7 +963,7 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
             auroc = roc_curve_plot(key_dir, key, data_type, epoch, step)
 
 
-def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, step= 0, save_dir=None):
+def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, step= 0, save_dir=None, include_pr_curve=False):
     # calculate the AUROC
     # f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
     # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
@@ -976,7 +976,6 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
 
     target_abnormal_idxs_flag = (file_[:, 1] == 1)
     target_normal_idxs_flag = (file_[:, 1] == 0)
- 
     start = np.min(file_[:, 0])
     end = np.max(file_[:, 0])
     
@@ -985,36 +984,77 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
 
     auroc = 0.0
     fprTemp = 1.0
-    tpr_list, fpr_list = list(), list()
-    # for delta in np.arange(start, end, gap):
-    for delta in np.arange(start, end, gap):
-        
-        tpr = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
-        fpr = np.sum(file_[target_normal_idxs_flag, 0] >= delta) / np.sum(target_normal_idxs_flag)
-        # print(start, end, gap, delta, tpr, fpr)
-        # exit()
-        # f1.write("{}\n".format(tpr))
-        # f2.write("{}\n".format(fpr))
-        tpr_list.append(tpr)
-        fpr_list.append(fpr)
-        auroc += (-fpr + fprTemp) * tpr
-        fprTemp = fpr
+
+    tpr_list, fpr_list,prec_list = list(), list(), list()
     
-    fig, ax = plt.subplots()
-    ax.plot(fpr_list, tpr_list,  linewidth=3 )
-    ax.axhline(y=1.0, color='black', linestyle='dashed')
-    ax.set_title('ROC {} {}epoch'.format(category, epoch))
-    ax.set_xlim(0.0, 1.0)
-    ax.set_ylim(0.0, 1.05)
-    plt.xlabel('FPR(False Positive Rate)')
-    plt.ylabel('TPR(True Positive Rate)')
-    ax.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
+    if include_pr_curve :
+        for delta in np.arange(start, end, gap):
+            TP = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta)
+            FP = np.sum(file_[target_normal_idxs_flag, 0] >= delta)
+            P = np.sum(target_abnormal_idxs_flag)
+            N = np.sum(target_normal_idxs_flag)
+            tpr = float(TP) / float(P)
+            fpr = float(FP) / float(N)
+            
+            precision = float(TP) / float(TP+FP+0.0000001)
+            tpr_list.append(tpr)
+            fpr_list.append(fpr)
+            prec_list.append(precision)
+            auroc += (-fpr + fprTemp) * tpr
+            fprTemp = fpr
+        fig = plt.figure(figsize=(10,5))
+        fig.suptitle("composite from {} timeframe".format(category), fontsize=16)
+        ax1 = fig.add_subplot(1,2,1)
+        ax1.plot(fpr_list, tpr_list,  linewidth=3 )
+        ax1.axhline(y=1.0, color='black', linestyle='dashed')
+        # ax1.set_title('ROC {} {}epoch'.format(category, epoch))
+        ax1.set_xlim(0.0, 1.0)
+        ax1.set_ylim(0.0, 1.05)
+        ax1.set_xlabel('FPR(False Positive Rate)')
+        ax1.set_ylabel('TPR(True Positive Rate)')
+        ax1.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
+
+        ax2 = fig.add_subplot(1,2,2)
+        ax2.plot(tpr_list, prec_list,  linewidth=3 )
+        ax2.axhline(y=1.0, color='black', linestyle='dashed')
+        # ax2.set_title('PR_Curve {} {}epoch'.format(category, epoch))
+        ax2.set_xlim(0.0, 1.0)
+        ax2.set_ylim(0.0, 1.05)
+        ax2.set_xlabel('Precision')
+        ax2.set_ylabel('TPR(Recall)')
+
+    else:
+        for delta in np.arange(start, end, gap):
+            TP = np.sum(file_[target_abnormal_idxs_flag, 0] >= delta)
+            FP = np.sum(file_[target_normal_idxs_flag, 0] >= delta)
+            P = np.sum(target_abnormal_idxs_flag)
+            N = np.sum(target_normal_idxs_flag)
+            tpr = float(TP) / float(P)
+            fpr = float(FP) / float(N)
+            
+            tpr_list.append(tpr)
+            fpr_list.append(fpr)
+            auroc += (-fpr + fprTemp) * tpr
+            fprTemp = fpr
+
+        fig, ax = plt.subplots()
+        ax.plot(fpr_list, tpr_list,  linewidth=3 )
+        ax.axhline(y=1.0, color='black', linestyle='dashed')
+        ax.set_title('ROC {} {}epoch'.format(category, epoch))
+        ax.set_xlim(0.0, 1.0)
+        ax.set_ylim(0.0, 1.05)
+        plt.xlabel('FPR(False Positive Rate)')
+        plt.ylabel('TPR(True Positive Rate)')
+        ax.text(0.6,0.1, s='auroc : {:.5f}'.format(auroc),  fontsize=15)
 
     if save_dir is None:    # load dir에 저장
-        ax.figure.savefig('{}/ROC_{}_{}_{}epoch_{}.jpg'.format(load_dir, category, data_type, epoch, step), dpi=300)
+        fig.savefig('{}/ROC_{}_{}_{}epoch_{}.jpg'.format(load_dir, category, data_type, epoch, step), dpi=300)
     else :                  # 다른 dir을 지정하여 저장
-        ax.figure.savefig('{}/ROC_{}_{}_{}epoch_{}.jpg'.format(save_dir, category, data_type, epoch, step), dpi=300)
+        fig.savefig('{}/ROC_{}_{}_{}epoch_{}.jpg'.format(save_dir, category, data_type, epoch, step), dpi=300)
     plt.close("all")
+
+
+
     return auroc
 
     
