@@ -9,6 +9,10 @@ import utils
 import os
 from sys import exit
 import matplotlib as mpl
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sn
+
 
 def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_type='train', name=None, v3=False):
     mpl.use('Agg')
@@ -73,7 +77,7 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     if composite:
         category = {'Initial':0, 'Current':1, 'Under90':2}
     else:
-        category = {'sbp':0, 'map':1, 'under90':2, 'sbp2':3, 'map2':4}
+        category = {'SBP from Initial Timeframe':0, 'MAP from Initial Timeframe':1, 'SBP Under 90':2, 'SBP from Present Timeframe':3, 'MAP from Present Timeframe':4}
 
     for key, value in category.items():
         key_dir = save_dir + '/' + key
@@ -92,7 +96,7 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Test', epoch=None, step=
     # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
 
     conf_and_target_array = np.loadtxt(
-        '{}/confidence_{}_{}_{}_{}.txt'.format(load_dir, epoch, step, data_type, category),
+        '{}/confidence_{}_{}.txt'.format(load_dir, data_type, category),
         delimiter=',', dtype=np.str)
     file_ = np.array(
         [np.array((float(conf_and_target.split('\t')[0]), float(conf_and_target.split('\t')[1]))) for conf_and_target in
@@ -126,7 +130,7 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Test', epoch=None, step=
     fig, ax = plt.subplots()
     ax.plot(fpr_list, tpr_list, linewidth=3)
     ax.axhline(y=1.0, color='black', linestyle='dashed')
-    ax.set_title('ROC {} {}epoch'.format(category, epoch))
+    ax.set_title('ROC of {}'.format(category))
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.05)
     plt.xlabel('FPR(False Positive Rate)')
@@ -169,8 +173,8 @@ model.load_state_dict(state['model'])
 model.to(device)
 model.eval()
 
-torch.load('../tensor_data/1230_RNN_60min/Test.pt')
-val_data = val_data[:int(len(val_data) * 0.1)]
+val_data = torch.load('../tensor_data/1230_RNN_60min/Test.pt')
+# val_data = val_data[:int(len(val_data) * 0.01)]
 full_idx = [i for i in range(len(val_data[0][0]))]
 seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10, 0)]  # add HD_ntime_target
 fix_idx = [i for i in full_idx if i not in seq_idx]
@@ -188,7 +192,6 @@ val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
 
 model.eval()
 
-# For Control only : only masking latter half
 with torch.no_grad():
     total_output = torch.tensor([], dtype=torch.float).to(device)
     total_target = torch.tensor([]).to(device)
@@ -210,9 +213,7 @@ with torch.no_grad():
 
         total_target = torch.cat([total_target, flattened_target], dim=0)
         total_output = torch.cat([total_output, flattened_output], dim=0)
-    # print("\t[TIMER] INTO CONFIDENCE SCORE... {} // {}".format(time.time() - intermediate, time.time() - start))
-    # intermediate = time.time()
-    utils.confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Test', log_dir, epoch, step, composite=False, cal_roc=True)
+    confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Test', log_dir, epoch, step, composite=False, cal_roc=True)
 
     val_total = len(total_output)
 
@@ -234,21 +235,21 @@ with torch.no_grad():
         print("MAP2:")
         utils.compute_f1score(total_target[:,4], pred4, True)
 
-        sbp_confusion_matrix, sbp_log = confusion_matrix_save_as_img(pred0, total_target[:,0], 2)
-        map_confusion_matrix, dbp_log = confusion_matrix_save_as_img(pred1, total_target[:, 1], 2)
-        under90_confusion_matrix, dbp_log = confusion_matrix_save_as_img(pred2, total_target[:, 2], 2)
-        sbp2_confusion_matrix, dbp_log = confusion_matrix_save_as_img(pred3, total_target[:, 3], 2)
-        map2_confusion_matrix, dbp_log = confusion_matrix_save_as_img(pred4, total_target[:, 4], 2)
+        sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, total_target[:,0], 2)
+        map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, total_target[:, 1], 2)
+        under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, total_target[:, 2], 2)
+        sbp2_confusion_matrix, dbp_log = utils.confusion_matrix(pred3, total_target[:, 3], 2)
+        map2_confusion_matrix, dbp_log = utils.confusion_matrix(pred4, total_target[:, 4], 2)
 
         confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
                                            log_dir + '/{}'.format(thres),
-                                           epoch, step, 'Test', 'SBP', v3=True)
+                                           epoch, step, 'Test', 'SBP from Initial Timeframe', v3=True)
         confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
                                            log_dir + '/{}'.format(thres),
-                                           epoch, step, 'Test', 'MAP', v3=True)
+                                           epoch, step, 'Test', 'MAP from Initial Timeframe', v3=True)
         confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'Under90', v3=True)
+                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP Under 90', v3=True)
         confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP2', v3=True)
+                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP from Present Timeframe', v3=True)
         confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'MAP2', v3=True)
+                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'MAP from Present Timeframe', v3=True)

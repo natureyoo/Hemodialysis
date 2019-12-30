@@ -9,10 +9,8 @@ import utils
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sn
-from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
-import sys
 import os
+import pandas as pd
 
 # input_size = 36
 # input_size = 143
@@ -31,34 +29,58 @@ learning_rate = 0.01
 w_decay = 0.1
 
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-model = RNN_V3(input_fix_size, input_seq_size, hidden_size, num_layers, output_size, batch_size, dropout_rate,num_class1, num_class2, num_class3).to(device)
-state = torch.load('/home/ky/Desktop/Project/의료/final_result/rnn_v3/Classification/Dec30_101341/bs32_lr0.01_wdecay5e-06/12epoch_fix_input_size_110.model')
-model.load_state_dict(state['model'])
-model.to(device)
-model.eval()
+def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_type='train', name=None, v3=False):
+    mpl.use('Agg')
 
-torch.load('../tensor_data/1230_RNN_60min/Test.pt')
-# val_data = val_data[:int(len(val_data) * 0.1)]
-full_idx = [i for i in range(len(val_data[0][0]))]
-# seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
-seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10, 0)]  # add HD_ntime_target
-fix_idx = [i for i in full_idx if i not in seq_idx]
+    save_dir = save_dir + '/confusion_matrix'
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+    if not v3:
+        if name == 'sbp':
+            num_class = 7
+        else :
+            num_class = 5
+    else : # binary 문제로 바꾼 부분 option
+        num_class = 2
+    matrix = np.transpose(matrix)
 
-val_data_ = []
-for i in range(len(val_data)):
-    val_data_.append([val_data[i][0, fix_idx], val_data[i][:, seq_idx]])
-val_data = val_data_
-del val_data_
 
-val_seq_len_list = [len(x[1]) for x in val_data]
-val_dataset = loader.RNN_Dataset((val_data, val_seq_len_list), type='cls', ntime=60)
-val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
-                        collate_fn=lambda batch: loader.pad_collate(batch, True))
+    df_cm = pd.DataFrame(matrix.astype(int), index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
+    plt.figure(figsize = (9,7))
+    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=10000, fmt="d", annot_kws={"size": 15})
+    ax.set_title('{} Confusion Matrix'.format(name))
+    ax.yaxis.set_ticklabels(ax.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=10)
+    ax.xaxis.set_ticklabels(ax.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=10)
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom + 0.5, top - 0.5)
+    plt.ylabel('True label')
+    plt.xlabel('Pred. label')
 
-BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
+    ax.figure.savefig('{}/{}_{}.jpg'.format(save_dir, data_type, name))
+    # ax.figure.savefig('{}/{}_{}_{}epoch_{}iter_count.jpg'.format(save_dir, data_type, name, epoch, iteration))
+    plt.close("all")
 
-def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0, cal_roc=True):
+
+    matrix_sum = matrix.sum(axis=1)
+    for i in range(len(matrix)):
+        matrix[i] /= matrix_sum[i]
+
+    df_cm = pd.DataFrame(matrix, index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
+    plt.figure(figsize = (9,7))
+    ax = sn.heatmap(df_cm, annot=True, cmap='RdBu_r', vmin=0, vmax=1, annot_kws={"size": 15})
+    ax.set_title('{} Confusion Matrix'.format(name))
+    ax.yaxis.set_ticklabels(ax.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=10)
+    ax.xaxis.set_ticklabels(ax.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=10)
+    bottom, top = ax.get_ylim()
+    ax.set_ylim(bottom + 0.5, top - 0.5)
+    plt.ylabel('True label')
+    plt.xlabel('Pred. label')
+
+    ax.figure.savefig('{}/{}_{}.jpg'.format(save_dir, data_type, name))
+    # ax.figure.savefig('{}/{}_{}_{}epoch_{}iter.jpg'.format(save_dir, data_type, name, epoch, iteration))
+    plt.close("all")
+
+def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0, composite=True, cal_roc=True):
     '''
     mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
     data_type : Train / Validation / Test
@@ -67,8 +89,8 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
     '''
     print("Making roc curve...")
     save_dir += '/auroc'
-    # category = {'sbp':0, 'map':1, 'under90':2, 'sbp2':3, 'map2':4}
-    category ={"Current_Composite":0}
+    category ={"Composite Outcome from Initial Timeframe":0, "Composite Outcome from Present Timeframe":1}
+
     for key, value in category.items():
         key_dir = save_dir + '/' + key
         if not os.path.isdir(key_dir):
@@ -80,14 +102,13 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
         if cal_roc :
             auroc = roc_curve_plot(key_dir, key, data_type, epoch, step)
 
-
-def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None, step=0, save_dir=None):
+def roc_curve_plot(load_dir, category='sbp', data_type='Test', epoch=None, step=0, save_dir=None):
     # calculate the AUROC
     # f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
     # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
 
     conf_and_target_array = np.loadtxt(
-        '{}/confidence_{}_{}_{}_{}.txt'.format(load_dir, epoch, step, data_type, category),
+        '{}/confidence_{}_{}.txt'.format(load_dir, data_type, category),
         delimiter=',', dtype=np.str)
     file_ = np.array(
         [np.array((float(conf_and_target.split('\t')[0]), float(conf_and_target.split('\t')[1]))) for conf_and_target in
@@ -121,7 +142,7 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
     fig, ax = plt.subplots()
     ax.plot(fpr_list, tpr_list, linewidth=3)
     ax.axhline(y=1.0, color='black', linestyle='dashed')
-    ax.set_title('{} ROC'.format(category))
+    ax.set_title('ROC of {}'.format(category, epoch))
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.05)
     plt.xlabel('FPR(False Positive Rate)')
@@ -136,7 +157,33 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
     return auroc
 
 
-log_dir = 'OR/{}'.format()
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+model = RNN_V3(input_fix_size, input_seq_size, hidden_size, num_layers, output_size, batch_size, dropout_rate,num_class1, num_class2, num_class3).to(device)
+state = torch.load('/home/ky/Desktop/Project/의료/final_result/rnn_v3/Classification/Dec30_101341/bs32_lr0.01_wdecay5e-06/12epoch_fix_input_size_110.model')
+model.load_state_dict(state['model'])
+model.to(device)
+model.eval()
+
+val_data = torch.load('../tensor_data/1230_RNN_60min/Test.pt')
+# val_data = val_data[:int(len(val_data) * 0.01)]
+full_idx = [i for i in range(len(val_data[0][0]))]
+# seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
+seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10, 0)]  # add HD_ntime_target
+fix_idx = [i for i in full_idx if i not in seq_idx]
+
+val_data_ = []
+for i in range(len(val_data)):
+    val_data_.append([val_data[i][0, fix_idx], val_data[i][:, seq_idx]])
+val_data = val_data_
+del val_data_
+
+val_seq_len_list = [len(x[1]) for x in val_data]
+val_dataset = loader.RNN_Dataset((val_data, val_seq_len_list), type='cls', ntime=60)
+val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
+                        collate_fn=lambda batch: loader.pad_collate(batch, True))
+
+BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)
+log_dir = 'Composite/'
 with torch.no_grad():
     running_loss = 0
     total_output = torch.tensor([], dtype=torch.float).to(device)
@@ -147,19 +194,26 @@ with torch.no_grad():
         inputs_seq = inputs_seq.to(device)
         targets = targets_real.float().to(device)
 
-        OR_targets, _ = torch.max(targets_real[:,:,3:], 2, keepdim=True)
+        Initial_composite_targets, _ = torch.max(targets_real[:,:,:2], 2, keepdim=True)
+        Current_composite_targets, _ = torch.max(targets_real[:,:,3:], 2, keepdim=True)
         output = model(inputs_fix, inputs_seq, seq_len, device)  # shape : (seq, batch size, 5)
-        OR_output, _ = torch.max(output[:,:,3:], 2, keepdim=True)
+        Initial_composite_output, _ = torch.max(output[:,:,:2], 2, keepdim=True)
+        Current_composite_output, _ = torch.max(output[:,:,3:], 2, keepdim=True)
+
         # OR_output = torch.mean(output[:, :, :], 2, keepdim=True)
-        OR_targets = OR_targets.float().to(device)
-        OR_output = OR_output.float().to(device)
+        Initial_composite_targets = Initial_composite_targets.float().to(device)
+        Current_composite_targets = Current_composite_targets.float().to(device)
+        Initial_composite_output = Initial_composite_output.float().to(device)
+        Current_composite_output = Current_composite_output.float().to(device)
 
         flattened_output = torch.tensor([]).to(device)
         flattened_target = torch.tensor([]).to(device)
 
         for idx, seq in enumerate(seq_len):
-            flattened_output = torch.cat([flattened_output, OR_output[:seq, idx, :].reshape(-1, 1)], dim=0)
-            flattened_target = torch.cat((flattened_target, OR_targets[:seq, idx, :].reshape(-1, 1)), dim=0)
+            tmp_output = torch.cat([Initial_composite_output[:seq, idx, :].reshape(-1, 1), Current_composite_output[:seq, idx, :].reshape(-1, 1)], dim=1)
+            tmp_target = torch.cat([Initial_composite_targets[:seq, idx, :].reshape(-1, 1), Current_composite_targets[:seq, idx, :].reshape(-1, 1)], dim=1)
+            flattened_output = torch.cat([flattened_output, tmp_output], dim=0)
+            flattened_target = torch.cat([flattened_target, tmp_target], dim=0)
 
 
         total_target = torch.cat([total_target, flattened_target], dim=0)
@@ -170,9 +224,15 @@ with torch.no_grad():
     val_total = len(total_output)
 
     for thres in [0.1,0.3,0.5,0.7]:
-        pred0 = (F.sigmoid(total_output) > thres).long()
-        confusion_matrix, log = utils.confusion_matrix(pred0, total_target, 2)
+        pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
+        pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
 
-        utils.confusion_matrix_save_as_img(confusion_matrix.detach().cpu().numpy(),
+        initial_confusion_matrix, log = utils.confusion_matrix(pred0, total_target[:,0], 2)
+        current_confusion_matrix, log = utils.confusion_matrix(pred1, total_target[:,1], 2)
+
+        confusion_matrix_save_as_img(initial_confusion_matrix.detach().cpu().numpy(),
                                      log_dir + '/{}'.format(thres),
-                                     0, 0, 'Test', 'Composite', v3=True)
+                                     0, 0, 'Test', 'Composite Outcome from Initial Timeframe', v3=True)
+        confusion_matrix_save_as_img(current_confusion_matrix.detach().cpu().numpy(),
+                                     log_dir + '/{}'.format(thres),
+                                     0, 0, 'Test', 'Composite Outcome from Present Timeframe', v3=True)
