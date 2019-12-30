@@ -16,7 +16,7 @@ import os
 
 # input_size = 36
 # input_size = 143
-input_fix_size = 123
+input_fix_size = 110
 input_seq_size = 9
 hidden_size = 256
 num_layers = 3
@@ -33,12 +33,12 @@ w_decay = 0.1
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 model = RNN_V3(input_fix_size, input_seq_size, hidden_size, num_layers, output_size, batch_size, dropout_rate,num_class1, num_class2, num_class3).to(device)
-state = torch.load('/home/ky/Desktop/Project/의료/result/rnn_v3/Classification/Dec18_161630/bs32_lr0.01_wdecay5e-06/11epoch.model')
+state = torch.load('/home/ky/Desktop/Project/의료/final_result/rnn_v3/Classification/Dec30_101341/bs32_lr0.01_wdecay5e-06/12epoch_fix_input_size_110.model')
 model.load_state_dict(state['model'])
 model.to(device)
 model.eval()
 
-val_data = torch.load('/home/ky/Desktop/Project/의료/data/tensor_data/1218_EF_60min/Test.pt')
+torch.load('../tensor_data/1230_RNN_60min/Test.pt')
 # val_data = val_data[:int(len(val_data) * 0.1)]
 full_idx = [i for i in range(len(val_data[0][0]))]
 # seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
@@ -73,7 +73,7 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
         key_dir = save_dir + '/' + key
         if not os.path.isdir(key_dir):
             os.makedirs(key_dir)
-        f = open('{}/confidence_{}_{}_{}_{}.txt'.format(key_dir, epoch, step, data_type, key), 'w')
+        f = open('{}/confidence_{}_{}.txt'.format(key_dir, data_type, key), 'w')
         for i in range(len(mini_batch_outputs[:,value])):
             f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
         f.close()
@@ -136,7 +136,7 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Validation', epoch=None,
     return auroc
 
 
-log_dir = 'OR/Current'
+log_dir = 'OR/{}'.format()
 with torch.no_grad():
     running_loss = 0
     total_output = torch.tensor([], dtype=torch.float).to(device)

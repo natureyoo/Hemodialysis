@@ -51,7 +51,7 @@ def rnn_classification(args):
 
     # input_size = 36
     # input_size = 143
-    input_fix_size = 123
+    input_fix_size = 110
     input_seq_size = 9
     hidden_size = args.hidden_size
     num_layers = args.rnn_hidden_layers
@@ -88,7 +88,7 @@ def rnn_classification(args):
     # model.load_state_dict(state['model'])
     # load###############################################
     #####################################################
-    train_data = torch.load('/home/ky/Desktop/Project/의료/tensor_data/RNN/Train.pt')
+    train_data = torch.load('../tensor_data/1230_RNN_60min/Train.pt')
     # train_data = np.concatenate([train_data, torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Train2_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
@@ -113,7 +113,7 @@ def rnn_classification(args):
     train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: loader.pad_collate(batch, True))
 
-    val_data = torch.load('/home/ky/Desktop/Project/의료/tensor_data/RNN/Validation.pt')
+    val_data = torch.load('../tensor_data/1230_RNN_60min/Validation.pt')
     # val_data = val_data[:int(len(val_data) * 0.1)]
     val_data_ = []
     for i in range(len(val_data)):
@@ -221,12 +221,6 @@ def rnn_classification(args):
             torch.nn.utils.clip_grad_norm(model.parameters(), 3)
             optimizer.step()
 
-            if (batch_idx + 1) % args.valid_iter_freq == 0:
-                threshold = [0.1, 0.3, 0.5]
-                model.eval()
-                criterion = BCE_loss_with_logit
-                utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, num_class1, num_class2, threshold, log_dir=log_dir, epoch=epoch, step=batch_idx+1)
-            # if (batch_idx + 1) % args.train_print_freq == 0:
             if epoch < 5:       # 5 epoch 까지는 실시간으로 loss & acc를 보겠다.
                 sys.stdout.write('\r')
                 sys.stdout.write('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f} SBP2 l: {:.4f} MAP2 l: {:.4f} \t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f} SBP2 acc.: {:.4f}  MAP2 acc.: {:.4}'

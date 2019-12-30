@@ -103,7 +103,7 @@ class HemodialysisDataset():
         self.hemodialysis_frame.drop(labels=drop_columns, inplace=True, axis=1)
         timestamp = pd.to_datetime(self.hemodialysis_frame['HD_duration']).dt
         self.hemodialysis_frame['HD_duration'] = timestamp.hour * 60 + timestamp.minute
-        self.hemodialysis_frmae = self.hemodialysis_frame[~self.hemodialysis_frame.EF.isnull()] # EF 변수 없는 환자 drop
+        # self.hemodialysis_frmae = self.hemodialysis_frame[~self.hemodialysis_frame.EF.isnull()] # EF 변수 없는 환자 drop
         self.hemodialysis_frame.fillna(method='ffill', inplace=True)
         self.hemodialysis_frame['Pt_sex'] = self.hemodialysis_frame['Pt_sex'].replace({'M':0, 'F':1})
         for c in categorical:
@@ -144,7 +144,8 @@ class HemodialysisDataset():
         self.hemodialysis_frame['HD_ctime_raw'] = self.hemodialysis_frame['HD_ctime']
         self.hemodialysis_frame['HD_ntime_raw'] = self.hemodialysis_frame['HD_ntime']
         # EF 변수 추가
-        numerical_col = ['EF', 'Pt_age', 'HD_duration', 'HD_ntime', 'HD_ctime', 'HD_prewt', 'HD_uf', 'VS_sbp', 'VS_dbp', 'VS_hr', 'VS_bt', 'VS_bfr', 'VS_uft', 'Lab_wbc', 'Lab_hb', 'Lab_plt', 'Lab_chol', 'Lab_alb', 'Lab_glu', 'Lab_ca', 'Lab_phos', 'Lab_ua', 'Lab_bun', 'Lab_scr', 'Lab_na', 'Lab_k', 'Lab_cl', 'Lab_co2']
+        numerical_col = ['Pt_age', 'HD_duration', 'HD_ntime', 'HD_ctime', 'HD_prewt', 'HD_uf', 'VS_sbp', 'VS_dbp', 'VS_hr', 'VS_bt', 'VS_bfr', 'VS_uft', 'Lab_wbc', 'Lab_hb', 'Lab_plt', 'Lab_chol', 'Lab_alb', 'Lab_glu', 'Lab_ca', 'Lab_phos', 'Lab_ua', 'Lab_bun', 'Lab_scr', 'Lab_na', 'Lab_k', 'Lab_cl', 'Lab_co2']
+        # numerical_col = ['EF', 'Pt_age', 'HD_duration', 'HD_ntime', 'HD_ctime', 'HD_prewt', 'HD_uf', 'VS_sbp', 'VS_dbp', 'VS_hr', 'VS_bt', 'VS_bfr', 'VS_uft', 'Lab_wbc', 'Lab_hb', 'Lab_plt', 'Lab_chol', 'Lab_alb', 'Lab_glu', 'Lab_ca', 'Lab_phos', 'Lab_ua', 'Lab_bun', 'Lab_scr', 'Lab_na', 'Lab_k', 'Lab_cl', 'Lab_co2']
         for col in numerical_col:
             self.mean_for_normalize[col] = self.hemodialysis_frame[col].mean()
             self.std_for_normalize[col] = self.hemodialysis_frame[col].std()
@@ -229,7 +230,7 @@ class HemodialysisDataset():
 def make_data():
     path ='../raw_data/'
     # files = ['Hemodialysis2_1013.csv']
-    files = ['Hemodialysis1_1013.csv','Hemodialysis2_1013.csv']
+    files = ['Hemodialysis1_1229.csv','Hemodialysis2_1229.csv']
     # files = ['sample.csv']
     # files = ['Hemodialysis1_1013.csv'] # ['sample.csv']
     dataset = HemodialysisDataset(path, files, 'RNN', save=True)
