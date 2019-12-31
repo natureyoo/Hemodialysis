@@ -1104,3 +1104,91 @@ def eval_ensemble(files, threshold=[0.1, 0.3, 0.5], log_dir=None, epoch=None, st
                 100 * correct2 / test_total,
                 100 * correct3 / test_total,
                 100 * correct4 / test_total))
+
+
+def confidence_save_and_cal_auroc_for_niose(mini_batch_outputs, mini_batch_targets, data_type, save_dir, feat_idx, cal_roc=True):
+    '''
+    mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
+    data_type : Train / Validation / Test
+    minibatch 별로 저장 될 수 있게 open(,'a')로 했는데, 저장 다 하면 f.close() 권하긴 함.
+    KY: Batch 별로 작동되게 수정하여 f.close() 추가
+    '''
+    print("Making roc curve...")
+    save_dir += '/auroc'
+    category = {'init': 0, 'curr': 1, 'under90': 2}
+    for key, value in category.items():
+        key_dir = save_dir + '/' + key
+        if not os.path.isdir(key_dir):
+            os.makedirs(key_dir)
+        if feat_idx is not None:
+            file_name = '{}/confidence_{}_{}_noise_{}.txt'.format(key_dir, data_type, key, feat_idx)
+        else:
+            file_name = '{}/confidence_{}_{}_original.txt'.format(key_dir, data_type, key)
+        f = open(file_name, 'w')
+        for i in range(len(mini_batch_outputs[:, value])):
+            f.write("{}\t{}\n".format(mini_batch_outputs[i, value].item(), mini_batch_targets[i, value].item()))
+        f.close()
+        if cal_roc:
+            auroc = roc_curve_plot_for_noise(key_dir, key, data_type, feat_idx)
+            f_total = open('{}/auroc_all.txt'.format(key_dir), 'a')
+            if feat_idx is None:
+                f_total.write('original\t{}\n'.format(auroc))
+            else:
+                f_total.write('noise_{}\t{}\n'.format(feat_idx, auroc))
+            f_total.close()
+
+
+def roc_curve_plot_for_noise(load_dir, category='init', data_type='Test', feat_idx=None, save_dir=None):
+    # calculate the AUROC
+    # f1 = open('{}/Update_tpr.txt'.format(load_dir), 'w')
+    # f2 = open('{}/Update_fpr.txt'.format(load_dir), 'w')
+    if feat_idx is not None:
+        file_name = '{}/confidence_{}_{}_noise_{}.txt'.format(load_dir, data_type, category, feat_idx)
+    else:
+        file_name = '{}/confidence_{}_{}_original.txt'.format(load_dir, data_type, category)
+    print(file_name)
+    conf_and_target_array = np.loadtxt(file_name, delimiter='\t', dtype=np.float)
+
+    target_abnormal_idxs_flag = (conf_and_target_array[:, 1] == 1)
+    target_normal_idxs_flag = (conf_and_target_array[:, 1] == 0)
+
+    start = np.min(conf_and_target_array[:, 0])
+    end = np.max(conf_and_target_array[:, 0])
+
+    gap = (end - start) / 20000.
+    end = end + gap
+
+    auroc = 0.0
+    fprTemp = 1.0
+    tpr_list, fpr_list = list(), list()
+    # for delta in np.arange(start, end, gap):
+    for delta in np.arange(start, end, gap):
+        tpr = np.sum(conf_and_target_array[target_abnormal_idxs_flag, 0] >= delta) / np.sum(target_abnormal_idxs_flag)
+        fpr = np.sum(conf_and_target_array[target_normal_idxs_flag, 0] >= delta) / np.sum(target_normal_idxs_flag)
+        # print(start, end, gap, delta, tpr, fpr)
+        # exit()
+        # f1.write("{}\n".format(tpr))
+        # f2.write("{}\n".format(fpr))
+        tpr_list.append(tpr)
+        fpr_list.append(fpr)
+        auroc += (-fpr + fprTemp) * tpr
+        fprTemp = fpr
+
+    feat_idx = 'noise_{}'.format(feat_idx) if feat_idx is not None else 'original'
+    # fig, ax = plt.subplots()
+    # ax.plot(fpr_list, tpr_list, linewidth=3)
+    # ax.axhline(y=1.0, color='black', linestyle='dashed')
+    # ax.set_title('ROC {} {}'.format(category, feat_idx))
+    # ax.set_xlim(0.0, 1.0)
+    # ax.set_ylim(0.0, 1.05)
+    # plt.xlabel('FPR(False Positive Rate)')
+    # plt.ylabel('TPR(True Positive Rate)')
+    # ax.text(0.6, 0.1, s='auroc : {:.5f}'.format(auroc), fontsize=15)
+    #
+    #
+    # if save_dir is None:  # load dir에 저장
+    #     ax.figure.savefig('{}/ROC_{}_{}_{}.jpg'.format(load_dir, category, data_type, feat_idx), dpi=300)
+    # else:  # 다른 dir을 지정하여 저장
+    #     ax.figure.savefig('{}/ROC_{}_{}_{}.jpg'.format(save_dir, category, data_type, feat_idx), dpi=300)
+    # plt.close("all")
+    return auroc
