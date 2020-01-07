@@ -93,10 +93,9 @@ def mlp_classification(args):
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
     # train_data = train_data[:int(len(train_data)*0.01)]              # using part of data
     ori_len = len(train_data)
-    feature_idx = [i for i in range(train_data.shape[1]) if i!=111]
 
     print("num train data : {} --> {}".format(ori_len, len(train_data)))
-    train_dataset = loader.MLP_Dataset(train_data[:, feature_idx])
+    train_dataset = loader.MLP_Dataset(train_data)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
 
     """
@@ -116,7 +115,7 @@ def mlp_classification(args):
 
     val_data = torch.load('tensor_data/0106_MLP/Validation.pt')
     # val_data = val_data[:int(len(val_data) * 0.1)]
-    val_dataset = loader.MLP_Dataset(val_data[:, feature_idx])
+    val_dataset = loader.MLP_Dataset(val_data)
     val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False)
 
     BCE_loss_with_logit = nn.BCEWithLogitsLoss().to(device)

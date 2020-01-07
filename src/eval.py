@@ -144,112 +144,247 @@ def roc_curve_plot(load_dir, category='sbp', data_type='Test', epoch=None, step=
     plt.close("all")
     return auroc
 
+def eval_rnn():
+    input_fix_size = 110
+    input_seq_size = 9
+    hidden_size = 256
+    num_layers = 3
+    num_epochs = 100
+    output_size = 5
+    num_class1 = 1
+    num_class2 = 1
+    num_class3 = 1
+    batch_size = 32
+    dropout_rate = 0.1
+    learning_rate = 0.01
+    w_decay = 0.1
+    threshold = [0.1, 0.3, 0.5, 0.7]
+    epoch = 11
+    step = 0
+    task_type = 'Classification'
+    log_dir = 'Eval_on_Test'
 
-input_fix_size = 110
-input_seq_size = 9
-hidden_size = 256
-num_layers = 3
-num_epochs = 100
-output_size = 5
-num_class1 = 1
-num_class2 = 1
-num_class3 = 1
-batch_size = 32
-dropout_rate = 0.1
-learning_rate = 0.01
-w_decay = 0.1
-threshold = [0.1, 0.3, 0.5, 0.7]
-epoch = 11
-step = 0
-task_type = 'Classification'
-log_dir = 'Eval_on_Test'
+    # os.chdir('/home/ky/Desktop/Project/의료/result/rnn_v3/Classification/Dec12_171625/src')
 
-# os.chdir('/home/ky/Desktop/Project/의료/result/rnn_v3/Classification/Dec12_171625/src')
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = RNN_V3(input_fix_size, input_seq_size, hidden_size, num_layers, output_size, batch_size, dropout_rate,num_class1, num_class2, num_class3).to(device)
+    state = torch.load('/home/ky/Desktop/Project/의료/final_result/rnn_v3/Classification/Dec30_101341/bs32_lr0.01_wdecay5e-06/12epoch_fix_input_size_110.model')
+    model.load_state_dict(state['model'])
+    model.to(device)
+    model.eval()
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-model = RNN_V3(input_fix_size, input_seq_size, hidden_size, num_layers, output_size, batch_size, dropout_rate,num_class1, num_class2, num_class3).to(device)
-state = torch.load('/home/ky/Desktop/Project/의료/final_result/rnn_v3/Classification/Dec30_101341/bs32_lr0.01_wdecay5e-06/12epoch_fix_input_size_110.model')
-model.load_state_dict(state['model'])
-model.to(device)
-model.eval()
+    val_data = torch.load('../tensor_data/1230_RNN_60min/Test.pt')
+    # val_data = val_data[:int(len(val_data) * 0.01)]
+    full_idx = [i for i in range(len(val_data[0][0]))]
+    seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10, 0)]  # add HD_ntime_target
+    fix_idx = [i for i in full_idx if i not in seq_idx]
 
-val_data = torch.load('../tensor_data/1230_RNN_60min/Test.pt')
-# val_data = val_data[:int(len(val_data) * 0.01)]
-full_idx = [i for i in range(len(val_data[0][0]))]
-seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10, 0)]  # add HD_ntime_target
-fix_idx = [i for i in full_idx if i not in seq_idx]
+    val_data_ = []
+    for i in range(len(val_data)):
+        val_data_.append([val_data[i][0, fix_idx], val_data[i][:, seq_idx]])
+    val_data = val_data_
+    del val_data_
 
-val_data_ = []
-for i in range(len(val_data)):
-    val_data_.append([val_data[i][0, fix_idx], val_data[i][:, seq_idx]])
-val_data = val_data_
-del val_data_
+    val_seq_len_list = [len(x[1]) for x in val_data]
+    val_dataset = loader.RNN_Dataset((val_data, val_seq_len_list), type='cls', ntime=60)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
+                            collate_fn=lambda batch: loader.pad_collate(batch, True))
 
-val_seq_len_list = [len(x[1]) for x in val_data]
-val_dataset = loader.RNN_Dataset((val_data, val_seq_len_list), type='cls', ntime=60)
-val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False,
-                        collate_fn=lambda batch: loader.pad_collate(batch, True))
+    model.eval()
 
-model.eval()
+    with torch.no_grad():
+        total_output = torch.tensor([], dtype=torch.float).to(device)
+        total_target = torch.tensor([]).to(device)
 
-with torch.no_grad():
-    total_output = torch.tensor([], dtype=torch.float).to(device)
-    total_target = torch.tensor([]).to(device)
+        for i, ((inputs_fix, inputs_seq), (targets, targets_real), seq_len) in enumerate(val_loader):
+            feature_len = inputs_seq.shape[-1]
+            inputs_fix = inputs_fix.to(device)
+            inputs_seq = inputs_seq.to(device)
+            targets = targets_real.float().to(device)
+            output = model(inputs_fix, inputs_seq, seq_len, device)  # shape : (seq, batch size, 5)
 
-    for i, ((inputs_fix, inputs_seq), (targets, targets_real), seq_len) in enumerate(val_loader):
-        feature_len = inputs_seq.shape[-1]
-        inputs_fix = inputs_fix.to(device)
-        inputs_seq = inputs_seq.to(device)
-        targets = targets_real.float().to(device)
-        output = model(inputs_fix, inputs_seq, seq_len, device)  # shape : (seq, batch size, 5)
+            cut_idx = [i// 2 for i in seq_len]
 
-        cut_idx = [i// 2 for i in seq_len]
+            flattened_output = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
+            for idx, seq in enumerate(seq_len):
+                flattened_output = torch.cat([flattened_output, output[:seq, idx, :].reshape(-1, 5)], dim=0)
+                flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, 5)), dim=0)
 
-        flattened_output = torch.tensor([]).to(device)
-        flattened_target = torch.tensor([]).to(device)
-        for idx, seq in enumerate(seq_len):
-            flattened_output = torch.cat([flattened_output, output[:seq, idx, :].reshape(-1, 5)], dim=0)
-            flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, 5)), dim=0)
+            total_target = torch.cat([total_target, flattened_target], dim=0)
+            total_output = torch.cat([total_output, flattened_output], dim=0)
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Test', log_dir, epoch, step, composite=False, cal_roc=True)
 
-        total_target = torch.cat([total_target, flattened_target], dim=0)
-        total_output = torch.cat([total_output, flattened_output], dim=0)
-    confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Test', log_dir, epoch, step, composite=False, cal_roc=True)
+        val_total = len(total_output)
 
-    val_total = len(total_output)
+        for thres in threshold:
+            print("*****THRESHOLD: {}*****".format(thres))
+            pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
+            print("SBP:")
+            utils.compute_f1score(total_target[:,0], pred0, True)
+            pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
+            print("MAP:")
+            utils.compute_f1score(total_target[:,1], pred1, True)
+            pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
+            print("Under90:")
+            utils.compute_f1score(total_target[:,2], pred2, True)
+            pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
+            print("SBP2:")
+            utils.compute_f1score(total_target[:,3], pred3, True)
+            pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
+            print("MAP2:")
+            utils.compute_f1score(total_target[:,4], pred4, True)
 
-    for thres in threshold:
-        print("*****THRESHOLD: {}*****".format(thres))
-        pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
-        print("SBP:")
-        utils.compute_f1score(total_target[:,0], pred0, True)
-        pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
-        print("MAP:")
-        utils.compute_f1score(total_target[:,1], pred1, True)
-        pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
-        print("Under90:")
-        utils.compute_f1score(total_target[:,2], pred2, True)
-        pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
-        print("SBP2:")
-        utils.compute_f1score(total_target[:,3], pred3, True)
-        pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
-        print("MAP2:")
-        utils.compute_f1score(total_target[:,4], pred4, True)
+            sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, total_target[:,0], 2)
+            map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, total_target[:, 1], 2)
+            under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, total_target[:, 2], 2)
+            sbp2_confusion_matrix, dbp_log = utils.confusion_matrix(pred3, total_target[:, 3], 2)
+            map2_confusion_matrix, dbp_log = utils.confusion_matrix(pred4, total_target[:, 4], 2)
 
-        sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, total_target[:,0], 2)
-        map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, total_target[:, 1], 2)
-        under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, total_target[:, 2], 2)
-        sbp2_confusion_matrix, dbp_log = utils.confusion_matrix(pred3, total_target[:, 3], 2)
-        map2_confusion_matrix, dbp_log = utils.confusion_matrix(pred4, total_target[:, 4], 2)
+            confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres),
+                                               epoch, step, 'Test', 'SBP from Initial Timeframe', v3=True)
+            confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres),
+                                               epoch, step, 'Test', 'MAP from Initial Timeframe', v3=True)
+            confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP Under 90', v3=True)
+            confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP from Present Timeframe', v3=True)
+            confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, 'Test', 'MAP from Present Timeframe', v3=True)
 
-        confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres),
-                                           epoch, step, 'Test', 'SBP from Initial Timeframe', v3=True)
-        confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres),
-                                           epoch, step, 'Test', 'MAP from Initial Timeframe', v3=True)
-        confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP Under 90', v3=True)
-        confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP from Present Timeframe', v3=True)
-        confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
-                                           log_dir + '/{}'.format(thres), epoch, step, 'Test', 'MAP from Present Timeframe', v3=True)
+
+def eval_mlp():
+    input_fix_size = 110
+    input_seq_size = 8
+    hidden_size = 256
+    num_layers = 3
+    num_epochs = 100
+    output_size = 5
+    num_class1 = 1
+    num_class2 = 1
+    num_class3 = 1
+    batch_size = 32
+    dropout_rate = 0.1
+    learning_rate = 0.01
+    w_decay = 0.1
+    threshold = [0.1, 0.3, 0.5, 0.7]
+    epoch = 11
+    step = 0
+    task_type = 'Classification'
+    log_dir = 'Eval_on_Test/MLP'
+
+    # os.chdir('/home/ky/Desktop/Project/의료/result/rnn_v3/Classification/Dec12_171625/src')
+
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = MLP(input_fix_size + input_seq_size, hidden_size, output_size).to(device)
+    state = torch.load(
+        '/home/ky/Desktop/Project/의료/result/mlp/cls/Jan07_123709/bs32_lr0.01_wdecay5e-06/12epoch.model')
+    model.load_state_dict(state['model'])
+    model.to(device)
+    model.eval()
+
+    val_data = torch.load('../tensor_data/0106_MLP/Test.pt')
+    # val_data = val_data[:int(len(val_data) * 0.01)]
+    val_dataset = loader.MLP_Dataset(val_data)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=64, shuffle=False)
+
+    criterion = nn.BCEWithLogitsLoss().to(device)
+
+    model.eval()
+    with torch.no_grad():
+        running_loss, running_loss_sbp, running_loss_map, running_loss_under90, running_loss_sbp2, running_loss_map2 = 0, 0, 0, 0, 0, 0
+        total = 0
+        total_output = torch.tensor([], dtype=torch.float).to(device)
+        total_target = torch.tensor([]).to(device)
+
+        for batch_idx, (input, target) in enumerate(val_loader):
+            input = input.float().to(device)
+            target = target.float().to(device)
+            output = model(input)  # shape : (batch size, 5)
+
+            loss_sbp = criterion(output[:, 0], target[:,0])  # 이 loss는 알아서 output에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+            loss_map = criterion(output[:, 1], target[:, 1])
+            loss_under90 = criterion(output[:, 2], target[:, 2])
+            loss_sbp2 = criterion(output[:, 3], target[:, 3])
+            loss_map2 = criterion(output[:, 4], target[:, 4])
+
+            # loss = loss_sbp + loss_map + loss_under90
+            loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
+
+            running_loss_sbp = loss_sbp.item() * (1. / (batch_idx + 1.)) + running_loss_sbp * (
+                        batch_idx / (batch_idx + 1.))
+            running_loss_map = loss_map.item() * (1. / (batch_idx + 1.)) + running_loss_map * (
+                        batch_idx / (batch_idx + 1.))
+            running_loss_under90 = loss_under90.item() * (1. / (batch_idx + 1.)) + running_loss_under90 * (
+                        batch_idx / (batch_idx + 1.))
+            running_loss_sbp2 = loss_sbp2.item() * (1. / (batch_idx + 1.)) + running_loss_sbp2 * (
+                        batch_idx / (batch_idx + 1.))
+            running_loss_map2 = loss_map2.item() * (1. / (batch_idx + 1.)) + running_loss_map2 * (
+                        batch_idx / (batch_idx + 1.))
+            total += input.shape[0]
+
+            running_loss = loss.item() * (1. / (batch_idx + 1.)) + running_loss * (batch_idx / (batch_idx + 1.))
+            total_output = torch.cat([total_output, output])
+            total_target = torch.cat([total_target, target])
+
+        print("\tEvaluated Loss : {:.4f}".format(running_loss))
+        confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Test', log_dir, epoch, step, composite=False, cal_roc=True)
+
+        val_total = len(total_output)
+
+        for thres in threshold:
+            val_correct0, val_correct1, val_correct2, val_correct3, val_correct4 = 0, 0, 0, 0, 0
+            print("*****THRESHOLD: {}*****".format(thres))
+            pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
+            print("SBP:")
+            utils.compute_f1score(total_target[:,0], pred0, True)
+            pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
+            print("MAP:")
+            utils.compute_f1score(total_target[:,1], pred1, True)
+            pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
+            print("Under90:")
+            utils.compute_f1score(total_target[:,2], pred2, True)
+            pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
+            print("SBP2:")
+            utils.compute_f1score(total_target[:,3], pred3, True)
+            pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
+            print("MAP2:")
+            utils.compute_f1score(total_target[:,4], pred4, True)
+
+            val_correct0 += (pred0 == total_target[:, 0].long()).sum().item()
+            val_correct1 += (pred1 == total_target[:, 1].long()).sum().item()
+            val_correct2 += (pred2 == total_target[:, 2].long()).sum().item()
+            val_correct3 += (pred3 == total_target[:, 3].long()).sum().item()
+            val_correct4 += (pred4 == total_target[:, 4].long()).sum().item()
+
+            sbp_confusion_matrix, sbp_log = utils.confusion_matrix(pred0, total_target[:, 0], 2)
+            map_confusion_matrix, dbp_log = utils.confusion_matrix(pred1, total_target[:, 1], 2)
+            under90_confusion_matrix, dbp_log = utils.confusion_matrix(pred2, total_target[:, 2], 2)
+            sbp2_confusion_matrix, dbp_log = utils.confusion_matrix(pred3, total_target[:, 3], 2)
+            map2_confusion_matrix, dbp_log = utils.confusion_matrix(pred4, total_target[:, 4], 2)
+            confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres),
+                                               epoch, step, 'Test', 'SBP from Initial Timeframe', v3=True)
+            confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres),
+                                               epoch, step, 'Test', 'MAP from Initial Timeframe', v3=True)
+            confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP Under 90', v3=True)
+            confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, 'Test', 'SBP from Present Timeframe', v3=True)
+            confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
+                                               log_dir + '/{}'.format(thres), epoch, step, 'Test', 'MAP from Present Timeframe', v3=True)
+
+
+            print(
+                "\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(
+                    thres, 100 * val_correct0 / val_total,
+                    100 * val_correct1 / val_total,
+                    100 * val_correct2 / val_total,
+                    100 * val_correct3 / val_total,
+                    100 * val_correct4 / val_total))
+            # print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {
+
+eval_mlp()

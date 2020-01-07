@@ -943,7 +943,6 @@ def eval_mlp_classification(loader, model, device, output_size, criterion, thres
     with torch.no_grad():
         running_loss, running_loss_sbp, running_loss_map, running_loss_under90, running_loss_sbp2, running_loss_map2 = 0, 0, 0, 0, 0, 0
         total = 0
-        train_total, train_correct_sbp, train_correct_map, train_correct_under_90, train_correct_sbp2, train_correct_map2 = 0, 0, 0, 0, 0, 0
         total_output = torch.tensor([], dtype=torch.float).to(device)
         total_target = torch.tensor([]).to(device)
 
