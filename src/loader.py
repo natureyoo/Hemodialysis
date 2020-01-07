@@ -22,18 +22,18 @@ def pad_collate(batch, val=False):
     #     return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len)
     return ((input_fix, input_seq), (inter_target, real_target), batch_seq_len)
 
-class HD_Dataset(Dataset):
+class MLP_Dataset(Dataset):
     def __init__(self, data):
         super().__init__()
-        self.input = data[0]
-        self.target = data[1]
+        self.dataset = data
 
     def __getitem__(self, idx):
-        x, y = self.input[idx], self.target[idx]
+        target = self.dataset[idx, -9:]
+        x, y = self.dataset[idx, :-9], target[4:]
         return (x, y)
 
     def __len__(self):
-        return len(self.input)
+        return len(self.dataset)
 
 class RNN_Dataset(Dataset):
     """
@@ -61,30 +61,6 @@ class RNN_Dataset(Dataset):
             x, y = (self.dataset[idx][0], self.dataset[idx][1][:,:-9]), (target[:,4:], target[:,4:])
         batch_seq_len = self.seq_len[idx]
         return (x, y, batch_seq_len)
-
-    def __len__(self):
-        return len(self.dataset)
-
-class RNN_Val_Dataset(Dataset):
-    def __init__(self, data, type, ntime=None):
-        super().__init__()
-        self.ntime = ntime
-        self.dataset = data[0]
-        self.seq_len = data[1]
-        self.type = type
-
-    def __getitem__(self, idx):
-        if self.type == 'Regression':
-            # Not implemented
-            x, y = self.dataset[:,idx,:], self.dataset[:,idx,:2]
-        else:
-            # target = self.dataset[idx][1][:,-14:]
-            # x, y = (self.dataset[idx][0], self.dataset[idx][1][:,1:-14]), (target[:,[4,5,6,10,11]], target[:,[7,8,9,12,13]])
-            target = self.dataset[idx][1][:,-10:]
-            x, y = (self.dataset[idx][0], self.dataset[idx][1][:,1:-10]), (target[:,[4,5,6]], target[:,[7,8,9]])
-            mask = self.dataset[idx][1][:,0]
-        batch_seq_len = self.seq_len[idx]
-        return (x, y, batch_seq_len, mask)
 
     def __len__(self):
         return len(self.dataset)
