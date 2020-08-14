@@ -9,7 +9,9 @@ import utils
 import argparse
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
-import sys
+import sys,os
+
+import random
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Prediction Blood Pressure during Hemodialysis using Deep Learning model')
@@ -20,7 +22,7 @@ def parse_arg():
     parser.add_argument('--target_type', type=str, required=True)
     parser.add_argument('--model_type', type=str, required=True)
 
-    parser.add_argument('--input_fix_size', default=110, type=int)
+    parser.add_argument('--input_fix_size', default=109, type=int)
     parser.add_argument('--input_seq_size', default=9, type=int)
 
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default 0.001)')
@@ -44,8 +46,15 @@ def parse_arg():
 
     parser.add_argument('--load_path', default=None, type=str)
 
+    parser.add_argument('--remove_version', default='no_remove')
+
+    parser.add_argument('--gpu', default='1')
+
 
     args = parser.parse_args()
+
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
     print('\n{}\n'.format(args))
 
@@ -94,7 +103,9 @@ def rnn_classification(args):
     # load###############################################
     #####################################################
 
-    train_data = torch.load('../tensor_data/1230_RNN_60min/Train.pt')
+    # train_data = torch.load('../data/tensor_data/1230_RNN_60min/Train.pt')
+    train_data = torch.load('../data/tensor_data/RNN/Train.pt')
+
     # train_data = np.concatenate([train_data, torch.load('/home/jayeon/Documents/code/Hemodialysis/data/tensor_data/Interpolation_RNN_60min/Train2_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train3_60min.pt')], axis=0)
     # train_data = np.concatenate([train_data, torch.load('./data/tensor_data/Interpolation_RNN_60min/New/Train4_60min.pt')], axis=0)
@@ -103,9 +114,35 @@ def rnn_classification(args):
 
     # feature selection, manually.
     full_idx = [i for i in range(len(train_data[0][0]))]
-    # seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i for i in range(len(train_data[0][0]) - 11, len(train_data[0][0]) - 1)]
-    seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-10,0)] # add HD_ntime_target
-    fix_idx = [i for i in full_idx if i not in seq_idx]
+    if args.remove_version == 'no_remove':
+        seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
+        fix_idx = [i for i in full_idx if i not in seq_idx]
+    elif args.remove_version == 'A':
+        seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
+        rm_idx = [2,3]
+        fix_idx = [i for i in full_idx if ((i not in seq_idx) and i not in rm_idx)]
+    elif args.remove_version == 'C':
+        seq_idx = [5, 6] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
+        rm_idx = [11, 12, 13, 14, 15, 16]
+        fix_idx = [i for i in full_idx if ((i not in seq_idx) and i not in rm_idx)]
+    elif args.remove_version == 'D':
+        seq_idx = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
+        rm_idx = [17,18,19,20,21,22]
+        fix_idx = [i for i in full_idx if ((i not in seq_idx) and i not in rm_idx)]
+    else:
+        print('rm_version_error')
+        assert()
+    
+
+    
+
+    fix_idx.remove(111)
+
+    print('remove model: ', args.remove_version)
+    print('seq:{}'.format(seq_idx))
+    print('fix:{}'.format(fix_idx))
+
+
 
     ori_len = len(train_data)
     train_data_ = []
@@ -119,7 +156,8 @@ def rnn_classification(args):
     train_data = loader.RNN_Dataset((train_data, train_seq_len_list), type=task_type, ntime=60)
     train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True, collate_fn=lambda batch: loader.pad_collate(batch, True))
 
-    val_data = torch.load('../tensor_data/1230_RNN_60min/Validation.pt')
+    # val_data = torch.load('../data/tensor_data/1230_RNN_60min/Test.pt')
+    val_data = torch.load('../data/tensor_data/RNN/Test.pt')
     # val_data = val_data[:int(len(val_data) * 0.1)]
     val_data_ = []
     for i in range(len(val_data)):
@@ -140,7 +178,7 @@ def rnn_classification(args):
     elif args.optim == 'Adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, betas=(0.5,0.999), weight_decay=w_decay)
     elif args.optim == 'RMSProp':
-        optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=args.weight_decay)
     else:
         print('optim error')
         assert()
@@ -150,8 +188,10 @@ def rnn_classification(args):
 
     print("Starting training...")
     total_step = len(train_loader)
+    max_result = {'Initial':[0.0, 0.0], 'Present':[0.0, 0.0], 'Under90':[0.0, 0.0]}
     for epoch in range(args.init_epoch, num_epochs):
-        if epoch in args.lr_decay_epoch:
+        # if epoch in args.lr_decay_epoch:
+        if epoch > 0 :
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= args.lr_decay_rate
                 print('lr : {:.8f} --> {:.8f}'.format(param_group['lr']/args.lr_decay_rate, param_group['lr']))
@@ -161,9 +201,17 @@ def rnn_classification(args):
         threshold = [0.1, 0.3, 0.5]
         model.eval()
         criterion = BCE_loss_with_logit
-        if epoch >= 0:
-            utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch)
-
+        if epoch > 0:
+            result_dict = utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch)
+            for result_type_name, auroc_auprc_result_list in result_dict.items():
+                
+                if max_result[result_type_name][0] < auroc_auprc_result_list[0] :
+                    max_result[result_type_name][0] = auroc_auprc_result_list[0]
+                if max_result[result_type_name][1] < auroc_auprc_result_list[1] :
+                    max_result[result_type_name][1] = auroc_auprc_result_list[1]
+            print('max_result_dict : {}'.format(max_result))
+            
+        # exit()
         # 저장 : 매 epoch마다 하는데, 특정 epoch마다 하게 바꾸려면, epoch % args.print_freq == 0 등으로 추가
         state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
         torch.save(state, log_dir+'/{}epoch.model'.format(epoch))
@@ -188,14 +236,38 @@ def rnn_classification(args):
             flattened_target = torch.tensor([]).to(device)
 
             for idx, seq in enumerate(seq_len):
+                # rand_int = torch.randint(0, seq.item(), (1,))
+
+                # flattened_output = torch.cat([flattened_output, output[rand_int:rand_int+1, idx, :].reshape(-1, output_size)], dim=0)
+                # flattened_target = torch.cat((flattened_target, targets[rand_int:rand_int+1, idx, :].reshape(-1, output_size)), dim=0)
+                
                 flattened_output = torch.cat([flattened_output, output[:seq, idx, :].reshape(-1, output_size)], dim=0)
                 flattened_target = torch.cat((flattened_target, targets[:seq, idx, :].reshape(-1, output_size)), dim=0)
-
-            loss_sbp = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
-            loss_map = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
-            loss_under90 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
-            loss_sbp2 = BCE_loss_with_logit(flattened_output[:,3], flattened_target[:,3])
-            loss_map2 = BCE_loss_with_logit(flattened_output[:, 4], flattened_target[:, 4])
+            # copy_idx = 2
+            # flattened_target[:,0] = flattened_target[:,copy_idx]
+            # flattened_target[:,1] = flattened_target[:,copy_idx]
+            # flattened_target[:,2] = flattened_target[:,copy_idx]
+            # flattened_target[:,3] = flattened_target[:,copy_idx]
+            # flattened_target[:,4] = flattened_target[:,copy_idx]
+            weight_loss = False
+            if weight_loss:
+                weight = flattened_target*3+1
+                crite_0 = nn.BCEWithLogitsLoss(pos_weight=weight[:,0]).to(device)
+                crite_1 = nn.BCEWithLogitsLoss(pos_weight=weight[:,1]).to(device)
+                crite_2 = nn.BCEWithLogitsLoss(pos_weight=weight[:,2]).to(device)
+                crite_3 = nn.BCEWithLogitsLoss(pos_weight=weight[:,3]).to(device)
+                crite_4 = nn.BCEWithLogitsLoss(pos_weight=weight[:,4]).to(device)
+                loss_sbp = crite_0(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+                loss_map = crite_1(flattened_output[:,1], flattened_target[:,1])
+                loss_under90 = crite_2(flattened_output[:,2], flattened_target[:,2])
+                loss_sbp2 = crite_3(flattened_output[:,3], flattened_target[:,3])
+                loss_map2 = crite_4(flattened_output[:, 4], flattened_target[:, 4])
+            else:
+                loss_sbp = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+                loss_map = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
+                loss_under90 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
+                loss_sbp2 = BCE_loss_with_logit(flattened_output[:,3], flattened_target[:,3])
+                loss_map2 = BCE_loss_with_logit(flattened_output[:, 4], flattened_target[:, 4])
 
             # loss = loss_sbp + loss_map + loss_under90
             loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
@@ -227,6 +299,8 @@ def rnn_classification(args):
             torch.nn.utils.clip_grad_norm(model.parameters(), 3)
             optimizer.step()
 
+            
+
             if epoch < 5:       # 5 epoch 까지는 실시간으로 loss & acc를 보겠다.
                 sys.stdout.write('\r')
                 sys.stdout.write('| Epoch [{}/{}], Step [{}/{}], SBP l: {:.4f}  DBP_l: {:.4f} Under90 l:{:.4f} SBP2 l: {:.4f} MAP2 l: {:.4f} \t SBP acc.: {:.4f} MAP acc.: {:.4f} 90 acc.: {:.4f} SBP2 acc.: {:.4f}  MAP2 acc.: {:.4}'
@@ -248,8 +322,6 @@ def rnn_classification(args):
                             train_correct_sbp / train_total,
                             train_correct_map / train_total, train_correct_under_90 / train_total,
                             train_correct_sbp2 / train_total, train_correct_map2 / train_total))
-
-
     model.eval()
 
     ####################################################################3

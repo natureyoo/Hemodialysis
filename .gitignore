@@ -11,6 +11,12 @@ tensor_data/
 result/
 data/
 *result*/*
+fig/
+fig_backup/
+*.txt
+*.zip
+*.csv
+*.pt
 
 ### trained_models ###
 trained_models/

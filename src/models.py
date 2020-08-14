@@ -288,6 +288,96 @@ class RNN_V2(nn.Module):
         return feature
 
 
+def fc_class1(hidden_size, output_size=1, dropout_rate=0.1):
+    fc = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.LayerNorm(hidden_size), nn.ReLU(), \
+            nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(), 
+            # nn.Linear(hidden_size, hidden_size), nn.Dropout(dropout_rate), nn.ReLU(),
+            nn.Linear(hidden_size, 1))
+    return fc
+
+
+class RNN_V4(nn.Module):
+    def __init__(self, input_fix_size, input_seq_size, hidden_size, num_layer, batch_size, dropout_rate):
+        super().__init__()
+        self.input_seq_size = input_seq_size
+        self.input_fix_size = input_fix_size
+        self.hidden_size = hidden_size
+        self.num_layer = num_layer
+        self.batch_size = batch_size
+        self.dropout_rate = dropout_rate
+
+        self.BN_before_fc_fix = nn.BatchNorm1d(input_fix_size)
+        self.BN_before_fc_seq = nn.BatchNorm1d(input_seq_size)
+
+        self.GRU = nn.GRU(input_seq_size+input_fix_size, hidden_size, num_layers=num_layer)
+        self.merge_fc = nn.Sequential(nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size), nn.ReLU(), nn.Linear(hidden_size, hidden_size))
+
+        self.fc_class1 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
+        self.fc_class2 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
+        self.fc_class3 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
+        self.fc_class4 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
+        self.fc_class5 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
+
+        for m in [self.merge_fc, self.fc_class1,self.fc_class2,self.fc_class3,self.fc_class4,self.fc_class5] :
+            if isinstance(m, nn.BatchNorm1d):
+                if m.weight is not None:
+                    m.weight.data.normal_(0.0, 0.02)
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                m.weight.data.normal_(0.0, 0.02)
+                # n = m.in_features
+                # y = 1.0/np.sqrt(n)
+                # m.weight.data.uniform_(-y, y)
+                # m.bias.data.fill_(0)
+            elif isinstance(m, nn.GRU):
+                for param in m.parameters():
+                    if len(param.shape) >= 2:
+                        # print('GRU weight init. --> orthogonal_')
+                        # init.orthogonal_(param.data)
+                        print('GRU weight init. --> xavier_normal_')
+                        init.xavier_normal_(param.data)
+            else:
+                pass
+
+    def forward(self, X_fix, X_seq, seq_len, device=None):
+        '''
+        X : torch.Tensor
+        X shape : (seq, batch size, feature size)
+        seq_len : list --> e.g. [7,4,5,6,7,11]
+        len(seq_len) == batch size
+
+        output shape : (seq, batch size, 5)
+        '''
+        h1, h2, h3, h4 = None, None, None, None
+        X_fix = X_fix.float()
+        X_fix = self.BN_before_fc_fix(X_fix)
+        X_seq = X_seq.float()
+        X_seq = X_seq.permute(1, 2, 0)
+        X_seq = self.BN_before_fc_seq(X_seq)
+        X_seq = X_seq.permute(2,0,1)
+        seq_length = X_seq.size(0)
+
+        outputs, h_n = self.GRU(torch.cat((X_fix.unsqueeze(0).repeat(X_seq.size(0),1,1), X_seq), 2), h1)
+
+        output1 = self.fc_class1(outputs)
+        output2 = self.fc_class2(outputs)
+        output3 = self.fc_class3(outputs)
+        output4 = self.fc_class4(outputs)
+        output5 = self.fc_class5(outputs)
+        return torch.cat([output1, output2, output3, output4, output5], dim=-1)
+        # return torch.cat([output1, output2, output3], dim=-1)
+
+    def init_hidden(self):
+        hidden = torch.zeros(self.num_layer, self.batch_size, self.hidden_size)
+        return hidden
+
+    def batchnorm_by_using_first_seq(self, feature):
+        mean = torch.mean(feature[0].detach(), dim=0)
+        std = torch.std(feature[0].detach(), dim=0) + 1e-5
+        feature = torch.div((feature-mean), std)
+        return feature
+
 
 class RNN_V3(nn.Module):
     def __init__(self, input_fix_size, input_seq_size, hidden_size, num_layer, output_size, batch_size, dropout_rate, sbp_num_class=7, map_num_class=5, another_class=0):
@@ -413,12 +503,14 @@ class RNN_V3(nn.Module):
             # h_prop = self.inter_fc_3(h3)
             # h_prop = self.layer_norm_3(h_prop)
             # h_prop = self.inter_fc_4(h_prop)
+            # h4 = self.gru_module_4((h_prop), h4)
             h4 = self.gru_module_4((h_prop+X_seq[i]), h4)
+            # print(h4.size())
+            # exit()
             h_prop = h4
             h_prop = self.merge_fc(torch.cat((h_fix, h_prop), 1))
             h_prop = h_prop.float()
             outputs.append(h_prop)
-
         outputs = torch.stack(outputs)  # list 를 torch.Tensor로 만들기 위해
 
         output1 = self.fc_class1(outputs)
