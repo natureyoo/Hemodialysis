@@ -254,7 +254,7 @@ def rnn_classification(args):
                 loss_IDH4 = torch.mean(loss_IDH4)
                 loss_IDH5 = torch.mean(loss_IDH5)
 
-            if (args.weight_loss_ratio == 0.0) and (args.topk_loss_ratio == 0.0):
+            if (args.weight_loss_ratio == 0.0) and (args.topk_loss_ratio == 1.0):
                 loss_IDH1 = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])
                 loss_IDH2 = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
                 loss_IDH3 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
