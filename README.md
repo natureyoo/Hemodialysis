@@ -44,3 +44,5 @@
   * 한번의 투석에서 모든 frame의 loss 를 계산하는 것이 아닌, 일부만 loss 계산 (run_rnn_v4_0813.py --line215,217,218)
   * 이전처럼 fixed --> MLP  /  seq --> RNN
   * gradient cliping을 해왔는데, 끄면 어떻게 되는지?
+  * train data 일부만 사용 후, val data에서 검증??
+  
