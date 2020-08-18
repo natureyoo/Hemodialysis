@@ -8,6 +8,14 @@
 
 * 매 eval마다 confusion matrix 저장하면 너무 오래 걸림 --> args.draw_confusion_matrix에서 조정. (default=False)
 
+* data
+  * mean/std로 normalize하지 않았음. batchnorm으로 하기 때문에.
+  * numeric values 의 mean, std만 train data에서 구해서 저장해놓음
+  * mean/std 위치 : data/refine_one_hot_drop_25/wo_EF/mean_traindata.json
+
+* 각 feature 순서 : data/pt_file_25/column_list.json 에서 확인
+
+
 * snapshot
   * 매 epoch마다 저장
   * model만 저장하고, optim은 저장 안함 --> 따라서 저장한 것을 불러오면 성능이 더 낮아질 수도 있음
