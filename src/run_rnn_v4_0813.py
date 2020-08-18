@@ -12,11 +12,12 @@ from datetime import datetime
 import sys,os
 
 import random
+import pandas as pd
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Prediction Blood Pressure during Hemodialysis using Deep Learning model')
 
-    parser.add_argument('--data_root', type=str, default='../data/raw_data/0813/pt_file/wo_EF/')
+    parser.add_argument('--data_root', type=str, default='../data/raw_data/0813/pt_file_v1/wo_EF/')
     parser.add_argument('--save_result_root', type=str)
     parser.add_argument('--bash_file', type=str)
     parser.add_argument('--model_type', type=str, required=True)
@@ -46,14 +47,21 @@ def parse_arg():
     parser.add_argument('--gpu', default='1')
 
     parser.add_argument('--weight_loss_ratio', default=0.0, type=float, help='5.0, 3.0 etc....')
-    parser.add_argument('--topk_loss_ratio', default=0.0, type=float, help='0.3, 0.1 etc....')
+    parser.add_argument('--topk_loss_ratio', default=1.0, type=float, help='0.3, 0.1 etc....')
+    parser.add_argument('--fc_initialize', default='gau', type=str, help='gau, xavier_unif')
+    
+
+    parser.add_argument('--result_csv_path', default='./result/result.csv')
+    parser.add_argument('--result_csv_update', default=True)
+
+    parser.add_argument('--draw_confusion_matrix', default=False)
 
     args = parser.parse_args()
 
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    print('\n{}\n'.format(args))
+    
 
     return args
 
@@ -71,60 +79,49 @@ def rnn_classification(args):
     learning_rate = args.lr
     w_decay = args.weight_decay
 
+    result_dict = {'date':args.date[2:-1], 'stop_epo':0, 'IDH1':'0/0  (0)', 'IDH2':'0/0  (0)', 'IDH3':'0/0  (0)', 'IDH4':'0/0  (0)', 'IDH5':'0/0  (0)',  \
+            'Optim':args.optim, 'lr':args.lr, 'wd':args.weight_decay, 'hidden_size':args.hidden_size, 'num_h_layer':args.rnn_hidden_layers, \
+                'dropout':args.dropout_rate, 'batch size':args.batch_size, 'LOSS':'BCE', \
+                'pos_weight':args.weight_loss_ratio, 'TopK':args.topk_loss_ratio, 'fc_initialize':args.fc_initialize}
+    result_dict = pd.DataFrame.from_dict(result_dict, orient='index').T
+    if os.path.exists(args.result_csv_path):
+        result_df = pd.read_csv(args.result_csv_path, header=0)
+        result_df = result_df.append(result_dict)
+        result_df = result_df.reset_index(drop=True)
+    else:
+        result_df = result_dict
+    
+
     log_dir = '{}/bs{}_lr{}_wdecay{}'.format(args.save_result_root, batch_size, learning_rate, w_decay)
     utils.make_dir(log_dir)
     utils.make_dir(log_dir+'/log/')
     writer = SummaryWriter(log_dir+'/log/')
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = RNN_V4(input_fix_size, input_seq_size, hidden_size, num_layers, batch_size, dropout_rate).to(device)
+    model = RNN_V4(input_fix_size, input_seq_size, hidden_size, num_layers, batch_size, dropout_rate, initialize='gau').to(device)
         
-    #####################################################
-    # load###############################################
     if args.load_path is not None:
         print('\n|| Load trained_model--> {}\n'.format(args.load_path))
         state = torch.load(args.load_path)
         model.load_state_dict(state['model'])
-    # load###############################################
-    #####################################################
+        # args.init_epoch = state['epoch']
 
     train_data = torch.load('{}/Train.pt'.format(args.data_root))
 
     # feature selection, manually.
     full_idx = [i for i in range(len(train_data[0][0]))]
-    if args.remove_version == 'no_remove':
-        age = [1,]
-        HD_info = list(range(2,7)) + list(range(8,15))
-        HD_sum_IDH = list(range(21,26))
-        VS = list(range(26,36))
-        Lab=list(range(42,57))
-        numeric = age + HD_info + HD_sum_IDH + VS + Lab + [i + len(full_idx) for i in range(-5,0)] # add HD_ntime_target
-        onehot = [i for i in full_idx if i not in numeric]
-    # elif args.remove_version == 'A':
-    #     numeric = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
-    #     rm_idx = [2,3]
-    #     onehot = [i for i in full_idx if ((i not in numeric) and i not in rm_idx)]
-    # elif args.remove_version == 'C':
-    #     numeric = [5, 6] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
-    #     rm_idx = [11, 12, 13, 14, 15, 16]
-    #     onehot = [i for i in full_idx if ((i not in numeric) and i not in rm_idx)]
-    # elif args.remove_version == 'D':
-    #     numeric = [5, 6, 11, 12, 13, 14, 15, 16] + [i + len(full_idx) for i in range(-9,0)] # add HD_ntime_target
-    #     rm_idx = [17,18,19,20,21,22]
-    #     onehot = [i for i in full_idx if ((i not in numeric) and i not in rm_idx)]
-    else:
-        print('rm_version_error')
-        assert()
+    age = [1,]
+    HD_info = list(range(2,7)) + list(range(8,15))
+    HD_sum_IDH = list(range(21,26))
+    VS = list(range(26,39))
+    Lab=list(range(46,60))
+    numeric = age + HD_info + HD_sum_IDH + VS + Lab + [i + len(full_idx) for i in range(-5,0)] # add HD_ntime_target
+    onehot = [i for i in full_idx if i not in numeric]
     
-
-    
-
     print('remove model: ', args.remove_version)
     print('one-hot:{}'.format(onehot))
     print('numeric:{}'.format(numeric))
     print('length : one {}      /     num {} (include 5-target)  '.format(len(onehot), len(numeric)))
-
-
 
     ori_len = len(train_data)
     train_data_ = []
@@ -165,29 +162,38 @@ def rnn_classification(args):
 
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
 
+    print('\n{}\n'.format(args))
+
     print("Starting training...")
     total_step = len(train_loader)
-    max_result = {'IDH1':[0.0, 0.0], 'IDH2':[0.0, 0.0], 'IDH3':[0.0, 0.0],'IDH4':[0.0, 0.0],'IDH5':[0.0, 0.0]}
+    max_result = {'IDH1':[0.0, 0.0, 0], 'IDH2':[0.0, 0.0, 0], 'IDH3':[0.0, 0.0, 0],'IDH4':[0.0, 0.0, 0],'IDH5':[0.0, 0.0, 0]}
     for epoch in range(args.init_epoch, num_epochs):
         if epoch > 0 :
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= args.lr_decay_rate
                 print('lr : {:.8f} --> {:.8f}'.format(param_group['lr']/args.lr_decay_rate, param_group['lr']))
         
-        threshold = [0.1, 0.3, 0.5]
         model.eval()
         criterion = nn.BCEWithLogitsLoss().to(device)
-        if epoch > 0:
-            result_dict = utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, threshold, log_dir=log_dir, epoch=epoch)
+        if epoch >= 0:
+            result_dict = utils.eval_rnn_classification_v3(val_loader, model, device, output_size, criterion, [0.5], log_dir=log_dir, epoch=epoch, draw_confu=args.draw_confusion_matrix)
             for result_type_name, auroc_auprc_result_list in result_dict.items():
-                if max_result[result_type_name][0] < auroc_auprc_result_list[0] :
-                    max_result[result_type_name][0] = auroc_auprc_result_list[0]
-                if max_result[result_type_name][1] < auroc_auprc_result_list[1] :
-                    max_result[result_type_name][1] = auroc_auprc_result_list[1]
+                if max_result[result_type_name][1] < round(auroc_auprc_result_list[1] * 100., 2) :
+                    max_result[result_type_name][0] = round(auroc_auprc_result_list[0]* 100., 2) 
+                    max_result[result_type_name][1] = round(auroc_auprc_result_list[1]* 100., 2) 
+                    max_result[result_type_name][2] = epoch
+                    result_df.iloc[len(result_df)-1, :].loc[result_type_name] = '{}/{}  ({})'.format(str(max_result[result_type_name][0]), str(max_result[result_type_name][1]), str(epoch))
+            result_df.iloc[-1, :].loc['stop_epo'] = epoch
+            if args.result_csv_update:
+                result_df.to_csv(args.result_csv_path, index=False)
+
+
+                
             print('max_dict : {}'.format(max_result))
-        state = {'epoch': (epoch + 1), 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
-        utils.make_dir(log_dir+'/snapshot/')
-        torch.save(state, log_dir+'/snapshot/{}epoch.model'.format(epoch))
+            # state = {'epoch': epoch, 'iteration': 0, 'model': model.state_dict(), 'optimizer': optimizer.state_dict()}
+            state = {'epoch': epoch, 'iteration': 0, 'model': model.state_dict()}
+            utils.make_dir(log_dir+'/snapshot/')
+            torch.save(state, log_dir+'/snapshot/{}epoch.model'.format(epoch))
 
 
         model.train()
@@ -206,7 +212,7 @@ def rnn_classification(args):
             flattened_target = torch.tensor([]).to(device)
 
             for idx, seq in enumerate(seq_len):
-                # rand_int = torch.randint(0, seq.item(), (1,))
+                # rand_int = torch.randint(0, seq.item(), (1,)) 
 
                 # flattened_output = torch.cat([flattened_output, output[rand_int:rand_int+1, idx, :].reshape(-1, output_size)], dim=0)
                 # flattened_target = torch.cat((flattened_target, targets[rand_int:rand_int+1, idx, :].reshape(-1, output_size)), dim=0)
@@ -225,14 +231,14 @@ def rnn_classification(args):
                 crite_2 = nn.BCEWithLogitsLoss(pos_weight=weight[:,2]).to(device)
                 crite_3 = nn.BCEWithLogitsLoss(pos_weight=weight[:,3]).to(device)
                 crite_4 = nn.BCEWithLogitsLoss(pos_weight=weight[:,4]).to(device)
-                loss_IDH1 = crite_0(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+                loss_IDH1 = crite_0(flattened_output[:,0], flattened_target[:,0])
                 loss_IDH2 = crite_1(flattened_output[:,1], flattened_target[:,1])
                 loss_IDH3 = crite_2(flattened_output[:,2], flattened_target[:,2])
                 loss_IDH4 = crite_3(flattened_output[:,3], flattened_target[:,3])
                 loss_IDH5 = crite_4(flattened_output[:, 4], flattened_target[:, 4])
-            if args.topk_loss_ratio != 0.0:
+            if args.topk_loss_ratio != 1.0:
                 BCE_loss_with_logit = nn.BCEWithLogitsLoss(reduction='none').to(device)
-                loss_IDH1 = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+                loss_IDH1 = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])
                 loss_IDH2 = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
                 loss_IDH3 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
                 loss_IDH4 = BCE_loss_with_logit(flattened_output[:,3], flattened_target[:,3])
@@ -249,7 +255,7 @@ def rnn_classification(args):
                 loss_IDH5 = torch.mean(loss_IDH5)
 
             if (args.weight_loss_ratio == 0.0) and (args.topk_loss_ratio == 0.0):
-                loss_IDH1 = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])    # 이 loss는 알아서 input에 sigmoid를 씌워줌. 그래서 input : """logit""" / 단, target : 0 or 1
+                loss_IDH1 = BCE_loss_with_logit(flattened_output[:,0], flattened_target[:,0])
                 loss_IDH2 = BCE_loss_with_logit(flattened_output[:,1], flattened_target[:,1])
                 loss_IDH3 = BCE_loss_with_logit(flattened_output[:,2], flattened_target[:,2])
                 loss_IDH4 = BCE_loss_with_logit(flattened_output[:,3], flattened_target[:,3])
@@ -287,7 +293,7 @@ def rnn_classification(args):
 
             writer.add_scalar('Loss/Train', loss)
 
-            if epoch < 5:       # 5 epoch 까지는 실시간으로 loss & acc를 보겠다.
+            if epoch < 5:
                 sys.stdout.write('\r')
                 sys.stdout.write('| Epoch [{}/{}], Step [{}/{}], LOSS:[IDH1:{:.4f}  IDH2:{:.4f} IDH3:{:.4f} IDH4:{:.4f}  IDH5: {:.4f} ] \t ACC:[IDH1:{:.4f}  IDH2:{:.4f} IDH3:{:.4f} IDH4:{:.4f}  IDH5: {:.4}]'
                     .format(epoch, num_epochs, batch_idx + 1, total_step, \
@@ -313,10 +319,11 @@ def main():
     args.save_result_root += '/' + args.model_type + '/Classification'
     dateTimeObj = datetime.now()
     timestampStr = dateTimeObj.strftime("%Y%m%d_%H%M%S/")
+    args.date = timestampStr
     args.save_result_root += '/' + timestampStr
     print('\n|| save root : {}\n\n'.format(args.save_result_root))
-    utils.copy_file(args.bash_file, args.save_result_root)  # .sh file 을 새 save_root에 복붙
-    utils.copy_dir('./src', args.save_result_root+'src')    # ./src 에 code를 모아놨는데, src folder를 통째로 새 save_root에 복붙
+    utils.copy_file(args.bash_file, args.save_result_root)
+    utils.copy_dir('./src', args.save_result_root+'src')
 
     rnn_classification(args)
 

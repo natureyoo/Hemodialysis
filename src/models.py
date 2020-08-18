@@ -297,7 +297,7 @@ def fc_class1(hidden_size, output_size=1, dropout_rate=0.1):
 
 
 class RNN_V4(nn.Module):
-    def __init__(self, input_fix_size, input_seq_size, hidden_size, num_layer, batch_size, dropout_rate):
+    def __init__(self, input_fix_size, input_seq_size, hidden_size, num_layer, batch_size, dropout_rate, initialize='gau'):
         super().__init__()
         self.input_seq_size = input_seq_size
         self.input_fix_size = input_fix_size
@@ -318,6 +318,9 @@ class RNN_V4(nn.Module):
         self.fc_class4 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
         self.fc_class5 = fc_class1(hidden_size=hidden_size, output_size=1, dropout_rate=dropout_rate)
 
+        self.net_initialize(initialize)
+
+    def net_initialize(self, fc_initialize='gau'):
         for m in [self.merge_fc, self.fc_class1,self.fc_class2,self.fc_class3,self.fc_class4,self.fc_class5] :
             if isinstance(m, nn.BatchNorm1d):
                 if m.weight is not None:
@@ -325,11 +328,13 @@ class RNN_V4(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
-                m.weight.data.normal_(0.0, 0.02)
-                # n = m.in_features
-                # y = 1.0/np.sqrt(n)
-                # m.weight.data.uniform_(-y, y)
-                # m.bias.data.fill_(0)
+                if fc_initialize == 'gau':
+                    m.weight.data.normal_(0.0, 0.02)
+                elif fc_initialize == 'xavier_unif':
+                    n = m.in_features
+                    y = 1.0/np.sqrt(n)
+                    m.weight.data.uniform_(-y, y)
+                    m.bias.data.fill_(0)
             elif isinstance(m, nn.GRU):
                 for param in m.parameters():
                     if len(param.shape) >= 2:

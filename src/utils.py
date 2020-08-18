@@ -219,21 +219,10 @@ def save_as_tensor(PATH):
 
 
 
-def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_type='train', name=None, v3=False):
+def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, data_type='train', name=None):
     mpl.use('Agg')
-
-    save_dir = save_dir + '/confusion_matrix'
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
-    if not v3:
-        if name == 'sbp':
-            num_class = 7
-        else :
-            num_class = 5
-    else : # binary 문제로 바꾼 부분 option 
-        num_class = 2
+    num_class = 2
     matrix = np.transpose(matrix)
-
 
     df_cm = pd.DataFrame(matrix.astype(int), index = [str(i) for i in range(num_class)], columns = [str(i) for i in range(num_class)])
     plt.figure(figsize = (9,7))
@@ -246,8 +235,8 @@ def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_ty
     plt.ylabel('True label')
     plt.xlabel('Pred. label')
 
-    ax.figure.savefig('{}/{}_{}_{}Epoch_Count.jpg'.format(save_dir, data_type, name, epoch))
-    # ax.figure.savefig('{}/{}_{}_{}epoch_{}iter_count.jpg'.format(save_dir, data_type, name, epoch, iteration))
+    make_dir(save_dir)
+    ax.figure.savefig('{}/{}_{}epo_Count.jpg'.format(save_dir, name, epoch))
     plt.close("all")
 
 
@@ -266,7 +255,7 @@ def confusion_matrix_save_as_img(matrix, save_dir, epoch=0, iteration=0, data_ty
     plt.ylabel('True label')
     plt.xlabel('Pred. label')
 
-    ax.figure.savefig('{}/{}_{}_{}Epoch.jpg'.format(save_dir, data_type, name, epoch))
+    ax.figure.savefig('{}/{}_{}epo.jpg'.format(save_dir, name, epoch))
     # ax.figure.savefig('{}/{}_{}_{}epoch_{}iter.jpg'.format(save_dir, data_type, name, epoch, iteration))
     plt.close("all")
 
@@ -317,91 +306,80 @@ def save_result_txt(outputs, targets, save_root, epoch, Flag='Test', ID=None, in
         f.write('\n')
 
 
-def test_one_hour(batch_inputs, batch_outputs_sbp, batch_outputs_map, batch_targets, seq_len=None, model_type='RNN', crite=60) :
-    """
-    Arguments:
-    batch_inputs, batch_outputs_sbp, batch_outputs_map, batch_targets : torch.tensor
-    seq_len : list
-    model_type : str
-    
-    batch_inputs shape : (padded_seqence_length, batch size, feature_size)
-    batch_outputs_sbp : model's output
-    batch_outputs_sbp shape : (padded_seqence_length, batch_size, sbp_num_classes)
-    batch_outputs_map shape : (padded_seqence_length, batch_size, map_num_classes)
-    batch_targets shape : (padded_seqence_length, batch size, 2)
-
-    seq_len shape : [int, int, int, int, ....]
-    len(seq_len) -> mini-batch size
-
-    Outputs:
-    dictionary : {'tp':int , 'fp':int, 'tn':int, 'fn':int} 
-
-    e.g.)
-    return_dict = {'tp':4 , 'fp':5, 'tn':3, 'fn':7}
-    
-    print(output_dict['tp'])
-    4
-
-    cf)
-    mean : "HD_ntime": 31.632980458822722, "HD_ctime": 112.71313384332716
-    std : "HD_ntime": 24.563710661941634, "HD_ctime": 78.88638128125473
-    """
-
-    # mean_HD_ntime = 31.632980458822722
-    # std_HD_ntime = 24.563710661941634
-    mean_HD_ctime = 112.71313384332716
-    std_HD_ctime = 78.88638128125473
-    
-    tp, fp, tn, fn = 0,0,0,0
-
-    return_dict = dict()
-    return_dict['tp'] = 0
-    return_dict['fp'] = 0
-    return_dict['tn'] = 0
-    return_dict['fn'] = 0
-
-    # error check
-    if model_type=='RNN' and seq_len is None:
-        print('test error. model type:RNN / but seq_len_list is absent.')
-        assert()
-    if seq_len is not None :
-        # TODO: absolute sbp under 90 ----> diff between init & current??
-        _, preds_sbp = torch.max(batch_outputs_sbp, 2)  # pred shape : (seq_len, batch size)
-        _, preds_map = torch.max(batch_outputs_map, 2)  # pred shape : (seq_len, batch size)
-        
-        c_time_tensor = (batch_inputs[:,:,5])   # shape : (seq_len, batch size)
-        padd_flag = (c_time_tensor == 0)
-        c_time_tensor[padd_flag] = 999          # 999 is big enough to seperate real & pad / because : c_time_tensor -> normalized value
-        c_time_tensor = (c_time_tensor * std_HD_ctime + mean_HD_ctime).int()    # un-normalize
-
-        # n_time_tensor = (batch_inputs.permute(1,0,2)[:,:,4])
-        # n_time_tensor[padd_flag] = 999
-        # n_time_tensor = (n_time_tensor * std_HD_ntime + mean_HD_ntime).int()
 
 
-        max_seq = max(seq_len)
-        for idx in range(max_seq):
-            criterion_flag = c_time_tensor[idx].detach().expand_as(c_time_tensor) +60 >= c_time_tensor
-            criterion_flag_count = criterion_flag.int().sum(0)  # shape : torch.Size([batch_size])
+def sklearn_calibration_histogram(conf, target, save_dir, method, nbins=20, epoch=9999):
+    from sklearn.calibration import calibration_curve
+    print('calibration sklearn')
+    bin_size = [0.01, 0.05, 0.10]
+    target_dict = {'IDH1':0, 'IDH2':1, 'IDH3':2, 'IDH4':3, 'IDH5':4}
+    return_xaxis_dict = dict()
+    return_yaxis_dict = dict()
+    for step in bin_size :
+        return_xaxis_dict[step] = dict()
+        return_yaxis_dict[step] = dict()
+        for idx, target_name in enumerate(target_dict.items()):
+            nbins = int(1.0 /  step)
+            fraction_of_positives, mean_predicted_value = calibration_curve(target[:,idx], conf[:,idx], n_bins=nbins)
+            return_yaxis_dict[step][target_name] = fraction_of_positives
+            return_xaxis_dict[step][target_name] = mean_predicted_value
+            bins_ = np.insert(mean_predicted_value.copy(), len(mean_predicted_value), 1.0)
 
-            gt_sbp_exist_list = [1 if torch.sum((batch_targets[idx:idx+criterion_flag_count[i],i,0]==0).int()) else 0 for i in range(len(criterion_flag_count)) ]
-            gt_map_exist_list = [1 if torch.sum((batch_targets[idx:idx+criterion_flag_count[i],i,1]==0).int()) else 0 for i in range(len(criterion_flag_count)) ]
-            gt_exist_list = [gt_sbp_exist_list[i] or gt_map_exist_list[i] for i in range(len(gt_sbp_exist_list))]
+            plt.rcParams["font.family"] = "Arial"
+            plt.rcParams["font.weight"] = "bold"
+            plt.rcParams["axes.labelweight"] = "bold"
+            xaxis_font_size = 20
+            yaxis_font_size = 20
+            tick_font_size = 20
+            legend_font= 20
+            fig = plt.figure(figsize=(8, 8)) 
+            ax = plt.subplot()
+            plt.tight_layout(rect=[0.18, 0.1, 0.96, 0.94])
             
-            pred_sbp_exist_list = [1 if torch.sum((preds_sbp[idx:idx+criterion_flag_count[i],i]==0).int()) else 0 for i in range(len(criterion_flag_count)) ]
-            pred_map_exist_list = [1 if torch.sum((preds_map[idx:idx+criterion_flag_count[i],i]==0).int()) else 0 for i in range(len(criterion_flag_count)) ]
-            pred_exist_list = [pred_sbp_exist_list[i] or pred_map_exist_list[i] for i in range(len(pred_sbp_exist_list))]
+            ax.plot(mean_predicted_value, fraction_of_positives, "s-", color='b', alpha=1.0, label='{} Calibration'.format(method), )
+            ax.plot(bins_, bins_, "k:" ,color='black', alpha=1.0, linestyle=':', label='Ideal Calibration')
             
-            tn, fp, fn, tp = (sklearn.metrics.confusion_matrix(gt_exist_list, pred_exist_list, labels=[0,1])).ravel()
-            return_dict['tp'] += tp
-            return_dict['fp'] += fp
-            return_dict['fn'] += fn
-            return_dict['tn'] += tn
-        return return_dict
+            
 
+            ax.set_ylim([0.0, 1.00001])
+            ax.set_xlim([0.0, 1.00001])
+            ax.set_yticks((0.0,0.25,0.5,0.75,1.0))
+            ax.set_xticks((0.0,0.25,0.5,0.75,1.0))
+            ax.set_xlabel('Confidence', fontsize=xaxis_font_size)
+            ax.set_ylabel('Fraction of positives', fontsize=yaxis_font_size)
+            ax.yaxis.set_label_coords(-0.21, 0.50)
+            ax.xaxis.set_label_coords(0.50, -0.12)
+            ax.grid(color='black', linestyle=':', alpha=0.8)
+            # ax.set_title('calibration_{}'.format(key))
+            ax.tick_params(direction='out', length=5, labelsize=tick_font_size, width=4, grid_alpha=0.5)
+            ax.legend(loc='upper left', fontsize=legend_font)
+
+            if not os.path.isdir('{}/calibration/bin_size_{:.2f}/'.format(save_dir, step)):
+                os.makedirs('{}/calibration/bin_size_{:.2f}/'.format(save_dir, step))
+            plt.savefig('{}/calibration/bin_size_{:.2f}/Line_graph_{}_calib_{}.jpg'.format(save_dir, step, target_name,epoch))
+            plt.close()
+
+    return return_yaxis_dict, return_xaxis_dict
+
+def draw_confusion_matrix(total_conf, total_target, save_dir, threshold, epoch=9999):
+    print('draw confusion matrix')
+    save_dir += '/confusion_matrix'
+    make_dir(save_dir)
+    category = {'IDH1':0, 'IDH2':1, 'IDH3':2, 'IDH4':3, 'IDH5':4}
+    for thres in threshold:
+        for key, value in category.items():
+            pred = (total_conf[:,value] > thres).long()
+            target = total_target[:,value].long()
+
+            # val_correct += (pred == target).sum().item()
+
+            confusion_matrix_result, log = confusion_matrix(pred, target, 2)
+            confusion_matrix_save_as_img(confusion_matrix_result.detach().cpu().numpy(),
+                                                save_dir + '/{}'.format(thres),
+                                                epoch, 'val', key)
 
 # version3 용 eval.
-def eval_rnn_classification_v3(loader, model, device, output_size, criterion, threshold=0.5, log_dir=None, epoch=None, step=0):
+def eval_rnn_classification_v3(loader, model, device, output_size, criterion, threshold=[0.5], log_dir=None, epoch=None, step=0, draw_confu=False):
     model.eval()
     with torch.no_grad():
         running_loss = 0
@@ -433,50 +411,14 @@ def eval_rnn_classification_v3(loader, model, device, output_size, criterion, th
             total_target = torch.cat([total_target, flattened_target], dim=0)
             total_output = torch.cat([total_output, flattened_output], dim=0)
         print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
-        result_dict = confidence_save_and_cal_auroc(F.sigmoid(total_output), total_target, 'Validation', log_dir, epoch, step)
-
-        val_total = len(total_output)
-
-        # for thres in threshold:
-        #     val_correct0, val_correct1, val_correct2, val_correct3, val_correct4 = 0, 0, 0, 0, 0
-
-        #     pred0 = (F.sigmoid(total_output[:,0]) > thres).long()
-        #     pred1 = (F.sigmoid(total_output[:,1]) > thres).long()
-        #     pred2 = (F.sigmoid(total_output[:,2]) > thres).long()
-        #     pred3 = (F.sigmoid(total_output[:,3]) > thres).long()
-        #     pred4 = (F.sigmoid(total_output[:,4]) > thres).long()
-
-        #     val_correct0 += (pred0 == total_target[:,0].long()).sum().item()
-        #     val_correct1 += (pred1 == total_target[:,1].long()).sum().item()
-        #     val_correct2 += (pred2 == total_target[:,2].long()).sum().item()
-        #     val_correct3 += (pred3 == total_target[:,3].long()).sum().item()
-        #     val_correct4 += (pred4 == total_target[:,4].long()).sum().item()
-
-        #     sbp_confusion_matrix, sbp_log = confusion_matrix(pred0, total_target[:,0], 2)
-        #     map_confusion_matrix, dbp_log = confusion_matrix(pred1, total_target[:, 1], 2)
-        #     under90_confusion_matrix, dbp_log = confusion_matrix(pred2, total_target[:, 2], 2)
-        #     sbp2_confusion_matrix, dbp_log = confusion_matrix(pred3, total_target[:, 3], 2)
-        #     map2_confusion_matrix, dbp_log = confusion_matrix(pred4, total_target[:, 4], 2)
-        #     confusion_matrix_save_as_img(sbp_confusion_matrix.detach().cpu().numpy(),
-        #                                        log_dir + '/{}'.format(thres),
-        #                                        epoch, step, 'val', 'sbp', v3=True)
-        #     confusion_matrix_save_as_img(map_confusion_matrix.detach().cpu().numpy(),
-        #                                        log_dir + '/{}'.format(thres),
-        #                                        epoch, step, 'val', 'map', v3=True)
-        #     confusion_matrix_save_as_img(under90_confusion_matrix.detach().cpu().numpy(),
-        #                                        log_dir + '/{}'.format(thres), epoch, step, 'val', 'under90', v3=True)
-        #     confusion_matrix_save_as_img(sbp2_confusion_matrix.detach().cpu().numpy(),
-        #                                        log_dir + '/{}'.format(thres), epoch, step, 'val', 'sbp2', v3=True)
-        #     confusion_matrix_save_as_img(map2_confusion_matrix.detach().cpu().numpy(),
-        #                                        log_dir + '/{}'.format(thres), epoch, step, 'val', 'map2', v3=True)
+        conf = F.sigmoid(total_output)
+        sklearn_calibration_histogram(conf.detach().cpu().numpy(), total_target.detach().cpu().numpy(), save_dir=log_dir, method='RNN', epoch=epoch)
+        result_dict = confidence_save_and_cal_auroc(conf, total_target, 'Validation', log_dir, epoch, step)
+        if draw_confu :
+            draw_confusion_matrix(conf, total_target, save_dir=log_dir, threshold=threshold,epoch=epoch)
 
 
-        #     print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t SBP2: {:.2f}% \t MAP2: {:.2f}%".format(thres, 100 * val_correct0 / val_total,
-        #                                                                                 100 * val_correct1 / val_total,
-        #                                                                                 100 * val_correct2 / val_total,
-        #                                                                                 100 * val_correct3 / val_total,
-        #                                                                                 100 * val_correct4 / val_total))
-            # print("\t Threshold: {} \tAccuracy of SBP: {:.2f}%\t MAP: {:.2f}%\t Under90: {:.2f}% \t".format(thres, 100 * val_correct0 / val_total, 100 * val_correct1 / val_total, 100 * val_correct2 / val_total))
+
         return result_dict
 
 def roc_curve_plot_v2(load_dir, category, conf, target, epoch, save_dir=None):
@@ -545,7 +487,7 @@ def roc_curve_plot_v2(load_dir, category, conf, target, epoch, save_dir=None):
     return auc, average_precision, [roc_tpr_array, roc_fpr_array, pr_precision_array, pr_recall_array]
 
 
-def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_type, save_dir, epoch=9999, step=0):
+def confidence_save_and_cal_auroc(conf, target, data_type, save_dir, epoch=9999, step=0):
     '''
     mini_batch_outputs shape : (data 개수, 3) -> flattend_output    / cf. data개수 --> 각 투석의 seq_len의 total sum
     data_type : Train / Validation / Test
@@ -564,8 +506,8 @@ def confidence_save_and_cal_auroc(mini_batch_outputs, mini_batch_targets, data_t
         # for i in range(len(mini_batch_outputs[:,value])):
         #     f.write("{}\t{}\n".format(mini_batch_outputs[i,value].item(), mini_batch_targets[i,value].item()))
         # f.close()
-        auroc, average_precision, [roc_tpr_array, roc_fpr_array, pr_precision_array, pr_recall_array] = roc_curve_plot_v2(load_dir=key_dir, category=key, conf=mini_batch_outputs[:,value].detach().cpu().numpy(), target=mini_batch_targets[:,value].detach().cpu().numpy(), epoch=epoch)
-        print("{} s |  {}  auroc : {}  AP : {} ".format(time.time() - start_time , key, auroc, average_precision))
+        auroc, average_precision, [roc_tpr_array, roc_fpr_array, pr_precision_array, pr_recall_array] = roc_curve_plot_v2(load_dir=key_dir, category=key, conf=conf[:,value].detach().cpu().numpy(), target=target[:,value].detach().cpu().numpy(), epoch=epoch)
+        # print("{} s |  {}  auroc : {}  AP : {} ".format(time.time() - start_time , key, auroc, average_precision))
         result_dict[key] = [auroc, average_precision]
     
     return result_dict
