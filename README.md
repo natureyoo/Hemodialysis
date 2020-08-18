@@ -45,4 +45,4 @@
   * 이전처럼 fixed --> MLP  /  seq --> RNN
   * gradient cliping을 해왔는데, 끄면 어떻게 되는지?
   * train data 일부만 사용 후, val data에서 검증??
-  
+  * gru 안에도(fc말고) dropout
