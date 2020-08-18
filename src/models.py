@@ -22,24 +22,23 @@ class MLP(nn.Module):
 # hj
 import numpy as np
 class MLP_HJ(nn.Module):
-    def __init__(self, input_size, hidden_size, num_classes):
+    def __init__(self, input_size, hidden_size, num_layer, num_classes, dropout_rate=0.3, fc_initialize='gau'):
         super(MLP_HJ, self).__init__()
+        self.fc_initialize = fc_initialize
         self.input_BN = nn.BatchNorm1d(input_size)
-        self.net = nn.Sequential(
-            nn.Linear(input_size, hidden_size), nn.BatchNorm1d(hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            # nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            # nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            # nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            # nn.Dropout(),
-            # nn.Linear(hidden_size, hidden_size), nn.ReLU(), \
-            nn.Linear(hidden_size, 32), nn.ReLU(), \
-            nn.Linear(32, num_classes)
-        )
-        # self.fc3 = nn.Linear(hidden_size, num_classes)
+        net_list = list()
+        for idx in range(num_layer):
+            if idx == 0 :
+                net_list.append(nn.Linear(input_size, hidden_size))
+            else:
+                net_list.append(nn.Linear(hidden_size, hidden_size))
+            net_list.append(nn.LayerNorm(hidden_size))
+            net_list.append(nn.Dropout(dropout_rate))
+            net_list.append(nn.ReLU())
+        net_list.append(nn.Linear(hidden_size, num_classes))
+        self.net = nn.Sequential(*net_list)
+        
+    def net_initialize(self):
         for m in self.net :
             # for m in self.fc:
                 if isinstance(m, nn.BatchNorm2d):
@@ -53,20 +52,24 @@ class MLP_HJ(nn.Module):
                     if m.bias is not None:
                         m.bias.data.zero_()
                 elif isinstance(m, nn.Linear):
-                    # m.weight.data.normal_(0.0, 100.0)
+                    if self.fc_initialize == 'gau':
+                        m.weight.data.normal_(0.0, 0.02)
+                    elif self.fc_initialize == 'xavier_unif':
+                        m.bias.data.zero_()
                     # get the number of the inputs
-                    # n = m.in_features
-                    # y = 1.0/np.sqrt(n)
-                    # m.weight.data.uniform_(-y, y)
-                    # m.bias.data.fill_(0)
-                    # nn.init.orthogonal_(m.weight.data)
-                    # m.bias.data.fill_(0)
+                        n = m.in_features
+                        y = 1.0/np.sqrt(n)
+                        m.weight.data.uniform_(-y, y)
+                        m.bias.data.zero_()
+                    elif self.fc_initialize == 'orthogonal':
+                        nn.init.orthogonal_(m.weight.data)
+                        # m.bias.data.zero_()
                     # m.weight.data.fill_(0)
-                    nn.init.kaiming_normal_(m.weight.data)
+                    # nn.init.kaiming_normal_(m.weight.data)
                 else:
                     pass
     def forward(self, x):
-        x = self.input_BN(x)
+        x = self.input_BN(x.float())
         out = self.net(x)
         return out
 

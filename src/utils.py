@@ -511,3 +511,44 @@ def confidence_save_and_cal_auroc(conf, target, data_type, save_dir, epoch=9999,
         result_dict[key] = [auroc, average_precision]
     
     return result_dict
+
+def eval_MLP(loader, model, device, output_size, criterion, threshold=[0.5], log_dir=None, epoch=None, step=0, draw_confu=False):
+    model.eval()
+    with torch.no_grad():
+        running_loss = 0
+        total_output = torch.tensor([], dtype=torch.float).to(device)
+        total_target = torch.tensor([]).to(device)
+
+        for i, (input_feature, targets) in enumerate(loader):
+            input_feature = input_feature.to(device)
+            targets = targets.float().to(device)
+            output = model(input_feature) # shape : (seq, batch size, 5)
+
+            flattened_output = torch.tensor([]).to(device)
+            flattened_target = torch.tensor([]).to(device)
+
+            flattened_output = torch.cat([flattened_output, output], dim=0)
+            flattened_target = torch.cat([flattened_target, targets], dim=0)
+
+            loss_sbp = criterion(flattened_output[:,0], flattened_target[:,0])
+            loss_map = criterion(flattened_output[:,1], flattened_target[:,1])
+            loss_under90 = criterion(flattened_output[:,2], flattened_target[:,2])
+            loss_sbp2 = criterion(flattened_output[:,3], flattened_target[:,3])
+            loss_map2 = criterion(flattened_output[:,4], flattened_target[:,4])
+
+            loss = loss_sbp + loss_map + loss_under90 + loss_sbp2 + loss_map2
+            running_loss += loss.item()
+
+            total_target = torch.cat([total_target, flattened_target], dim=0)
+            total_output = torch.cat([total_output, flattened_output], dim=0)
+        print("\tEvaluated Loss : {:.4f}".format(running_loss / i))
+        conf = F.sigmoid(total_output)
+        sklearn_calibration_histogram(conf.detach().cpu().numpy(), total_target.detach().cpu().numpy(), save_dir=log_dir, method='RNN', epoch=epoch)
+        result_dict = confidence_save_and_cal_auroc(conf, total_target, 'Validation', log_dir, epoch, step)
+        if draw_confu :
+            draw_confusion_matrix(conf, total_target, save_dir=log_dir, threshold=threshold,epoch=epoch)
+
+
+
+        return result_dict
+

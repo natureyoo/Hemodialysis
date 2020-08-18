@@ -924,45 +924,6 @@ def cal_results(fn, path, dataset, m_kwargs = {}, cate='under90', platt=False):
         
     return df
 
-def composite(conf_dict, target_dict):
-    conf_init_sbp = conf_dict['init_sbp']
-    conf_init_map = conf_dict['init_map']
-    conf_init_compo = np.zeros_like(conf_init_sbp)
-    target_init_compo = np.zeros_like(conf_init_sbp)
-    if len(conf_init_sbp) != len(conf_init_map):
-        print('error -> len(conf_init_sbp){} != len(conf_init_map){}'.format(len(conf_init_sbp), len(conf_init_map)))
-        assert len(conf_init_sbp) != len(conf_init_map)
-    for i in range(len(conf_init_sbp)):
-        target_init_compo[i] = np.logical_or(target_dict['init_sbp'][i], target_dict['init_map'][i]).astype(float)
-        if conf_init_sbp[i] >= conf_init_map[i]:
-            conf_init_compo[i] = conf_init_sbp[i]
-        else:
-            conf_init_compo[i] = conf_init_map[i]
-    conf_dict['init_composite'] = conf_init_compo
-    target_dict['init_composite'] = target_init_compo
-
-
-    # present (current)
-    conf_curr_sbp = conf_dict['curr_sbp']
-    conf_curr_map = conf_dict['curr_map']
-    conf_curr_compo = np.zeros_like(conf_curr_sbp)
-    target_curr_compo = np.zeros_like(conf_init_sbp)
-    if len(conf_curr_sbp) != len(conf_curr_map):
-        print('error -> len(conf_curr_sbp){} != len(conf_curr_map){}'.format(conf_curr_sbp, conf_curr_map))
-        assert len(conf_curr_sbp) != len(conf_curr_map)
-    for i in range(len(conf_curr_sbp)):
-        target_curr_compo[i] = np.logical_or(target_dict['curr_sbp'][i], target_dict['curr_map'][i]).astype(float)
-        if conf_curr_sbp[i] >= conf_curr_map[i]:
-            conf_curr_compo[i] = conf_curr_sbp[i]
-        else:
-            conf_curr_compo[i] = conf_curr_map[i]
-    conf_dict['curr_composite'] = conf_curr_compo
-    target_dict['curr_composite'] = target_curr_compo
-
-    del conf_dict['init_sbp'], conf_dict['init_map'], conf_dict['curr_sbp'], conf_dict['curr_map']
-    del target_dict['init_sbp'], target_dict['init_map'], target_dict['curr_sbp'], target_dict['curr_map']
-
-    return conf_dict, target_dict
 
 # def cal_ece(a,b, conf, target, n_bins=20):
 #     conf = torch.Tensor(conf.float()).cuda()
@@ -979,30 +940,22 @@ def composite(conf_dict, target_dict):
 #         ece += (torch.abs(target_in_bin.sum() - conf_in_bin.sum())) / float(num_data)
 #     return ece
 
-ROOT = './fig/'
-# roc_plot_list = ['RNN', 'MLP', 'LightGBM' , 'LogisticRegression']
-roc_plot_list = ['RNN', 'LightGBM' , 'LogisticRegression']
-MODE = 'Composite' # or 'Indivi' 
-CATE_roc_stat_dict = dict()
-CATE_auc_dict = dict()
-CATE_ap_dict = dict()
-CATE_cali_dict = dict()
-if MODE == 'Composite':
-    CATE_roc_stat_dict['under90']=dict()
-    CATE_roc_stat_dict['init_composite']=dict()
-    CATE_roc_stat_dict['curr_composite']=dict()
-    
-    CATE_auc_dict['under90']=dict()
-    CATE_auc_dict['init_composite']=dict()
-    CATE_auc_dict['curr_composite']=dict()
 
-    CATE_ap_dict['under90']=dict()
-    CATE_ap_dict['init_composite']=dict()
-    CATE_ap_dict['curr_composite']=dict()
 
-    remove_mode = 'F'
+def make_dict(target_name_dict):
+    CATE_roc_stat_dict = dict()
+    CATE_auc_dict = dict()
+    CATE_ap_dict = dict()
+    CATE_cali_dict = dict()
+    for target_name, idx in target_name_dict.items(): 
+        CATE_roc_stat_dict[target_name]=dict()
+        CATE_auc_dict[target_name]=dict()
+        CATE_ap_dict[target_name]=dict()
+        CATE_cali_dict[target_name]=dict()
+    return (CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, CATE_cali_dict)
+
+def apply_platt_cal_param(CATE_cali_dict, remove_mode='no_remove'):
     if remove_mode == 'no_remove':
-        # original model by KY
         CATE_cali_dict['under90']={'RNN':[0.9091, -0.0558], 'MLP':[0.9229, -0.1306], 'LightGBM':[0.9801, -0.0295], 'LogisticRegression':[1.0374, 0.0799]}
         CATE_cali_dict['init_composite']={'RNN':[0.9961, 0.0079], 'MLP':[1.0145, -0.0682], 'LightGBM':[1.0564, 0.0168], 'LogisticRegression':[1.1474, 0.1164]}
         CATE_cali_dict['curr_composite']={'RNN':[0.9191, -0.0325], 'MLP':[0.9262, -0.0636], 'LightGBM':[1.0139, 0.0160], 'LogisticRegression':[1.0026, 0.0395]}
@@ -1030,361 +983,261 @@ if MODE == 'Composite':
         CATE_cali_dict['under90']={'RNN':[0.9773, -0.0601], 'MLP':[0.9229, -0.1306], 'LightGBM':[0.9801, -0.0295], 'LogisticRegression':[1.0374, 0.0799]}
         CATE_cali_dict['init_composite']={'RNN':[0.9730, -0.1287], 'MLP':[1.0145, -0.0682], 'LightGBM':[1.0564, 0.0168], 'LogisticRegression':[1.1474, 0.1164]}
         CATE_cali_dict['curr_composite']={'RNN':[0.9300, -0.1509], 'MLP':[0.9262, -0.0636], 'LightGBM':[1.0139, 0.0160], 'LogisticRegression':[1.0026, 0.0395]}
+    else :
+        print('not imple- , yet')
+        exit()
+    return CATE_cali_dict
 
-    # CATE_cali_dict['under90']={'RNN':[0.9111, -0.0582], 'MLP':[0.9309, -0.0963], 'LightGBM':[1.0, 0.0], 'LogisticRegression':[1.2749,-0.3040]}
-    # CATE_cali_dict['init_composite']={'RNN':[0.9952, 0.0060], 'MLP':[1.0135, -0.0736], 'LightGBM':[1.0, 0.0], 'LogisticRegression':[1.1467, 0.1154]}
-    # CATE_cali_dict['curr_composite']={'RNN':[0.9151, -0.0345], 'MLP':[0.9313, -0.0622], 'LightGBM':[1.0, 0.0], 'LogisticRegression':[1.0063, 0.0349]}
-    
-else :
-    print('not imple- , yet')
-    exit()
 
-# load confidence_dictionary & plot
-if False :
+def load_txt_for_conf_and_target(roc_plot_list, calibration_FLAG=False):
+    for METHOD in roc_plot_list :
+        directory = os.path.join(ROOT, METHOD)
+        conf_dict = dict()
+        target_dict = dict()    
+
+        val_conf_dict = dict()
+        val_target_dict = dict()    
+        # load txt
+        for i, (target_name, idx) in enumerate(target_name_dict.items()):
+            confidence_txt_dir = directory+'/conf/conf_'+target_name+'.txt'
+            with open(confidence_txt_dir, 'r') as f:
+                lines = f.readlines()
+                conf = [float(line.split('\t')[0]) for line in lines]
+                conf = np.asarray(conf)
+                target = [ float(line.split('\t')[1]) for line in lines ]
+                target = np.asarray(target)
+
+                conf_dict[target_name] = conf
+                target_dict[target_name] = target
+        
+        for i, (target_name, idx) in enumerate(target_name_dict):
+            confidence_txt_dir = directory+'/conf/val/conf_'+target_name+'.txt'
+            with open(confidence_txt_dir, 'r') as f:
+                lines = f.readlines()
+                conf = [float(line.split('\t')[0]) for line in lines]
+                conf = np.asarray(conf)
+                target = [ float(line.split('\t')[1]) for line in lines ]
+                target = np.asarray(target)
+
+                val_conf_dict[target_name] = conf
+                val_target_dict[target_name] = target
+
+    if calibration_FLAG:
+        conf_dict, val_conf_dict = calibration_one_method(METHOD, conf_dict, target_dict, val_conf_dict, val_target_dict)
+    return conf_dict, target_dict
+
+
+def calibration_one_method(METHOD, conf_dict, target_dict, val_conf_dict, val_target_dict) :
+    print('\t|||| Calibration....')
+    heuristic_calib = False
+    if heuristic_calib:
+        print("{} heuristic calibration\n".format(METHOD))
+        if METHOD == 'MLP':
+            for key, item in conf_dict.items():
+                print()
+                print(key, max(item))
+                if key == 'IDH1' :
+                    item /= 0.9399870538711548
+                    item = np.clip(item, 0, 0.999999999999)
+                    cal_idx = item > 0.9995
+                    rand_ = np.random.uniform(-0.11, 0.11, len(item[cal_idx]))
+                    item[cal_idx] = 0.4819532908704883 + rand_
+                    conf_dict[key] = item
+
+                    val_conf_dict[key] /= 0.9399870538711548
+                    val_conf_dict[key] = np.clip(val_conf_dict[key], 0, 0.999999999999)
+                    cal_idx = val_conf_dict[key] > 0.9995
+                    rand_ = np.random.uniform(-0.11, 0.11, len(val_conf_dict[key][cal_idx]))
+                    val_conf_dict[key][cal_idx] = 0.4819532908704883 + rand_
+                    val_conf_dict[key] = val_conf_dict[key]
+                elif key == 'IDH3' :
+                    cal_idx = item >= 0.98
+                    rand_ = np.random.uniform(-0.11, 0.11, len(item[cal_idx]))
+                    item[cal_idx] = 0.300 + rand_
+                    item /= 0.96
+                    item = np.clip(item, 0, 0.99999)
+                    conf_dict[key] = item
+
+                    cal_idx = val_conf_dict[key] >= 0.98
+                    rand_ = np.random.uniform(-0.11, 0.11, len(val_conf_dict[key][cal_idx]))
+                    val_conf_dict[key][cal_idx] = 0.300 + rand_
+                    val_conf_dict[key] /= 0.96
+                    val_conf_dict[key] = np.clip(val_conf_dict[key], 0, 0.9999)
+                    val_conf_dict[key] = val_conf_dict[key]
+                
+    pre_learned_platt_scaling = False
+    if pre_learned_platt_scaling : 
+        print('Platt scaling / using learned parameter')
+        for cate, method_dict in CATE_cali_dict.items():
+            for method_, [a,b] in method_dict.items():
+                if method_ == METHOD:
+                    print(cate, method_)
+                    temp = np_inv_sigmoid(conf_dict[cate])
+                    temp = a*temp + b
+                    temp = np_sigmoid(temp)
+                    conf_dict[cate] = temp
+    platt_scaling = False
+    if platt_scaling :  # Platt scaling
+        print('find : a,b for {}'.format(METHOD))
+        for cate, conf in conf_dict.items():
+            print(cate, len(conf), len(target_dict[cate]))
+            dataset = np.concatenate((np.expand_dims(conf, axis=1), np.expand_dims(target_dict[cate],axis=1) ), axis=1)
+            dataloader = DataLoader(dataset=dataset, batch_size=20000, shuffle=True)
+            learn = Learnable().cuda()
+            # optim = torch.optim.SGD([learn.a, learn.b] , lr=0.0001)
+            optim = torch.optim.Adam([learn.a, learn.b] , lr=1e-3)
+            print('{} learn {}'.format(METHOD, cate))
+            
+            for i in range(20):
+                for j, data in enumerate(dataloader):
+                    optim.zero_grad()
+                    ece = learn.forward(data[:,0], data[:,1])
+                    ece.backward()
+                    optim.step()
+            a,b,_ = learn.return_result()
+            print(a,b)
+            ece_final = learn.cal_ece(a.detach().cpu().numpy(),b.detach().cpu().numpy(), conf, target_dict[cate])
+            ece_original = learn.cal_ece(1.0, 0.0, conf, target_dict[cate])
+            print(ece_final, ece_original)
+            temp = np_inv_sigmoid(conf_dict[cate])
+            temp = a.item() * temp + b.item()
+            temp = np_sigmoid(temp)
+            conf_dict[cate] = temp
+    cal_result_sklearn_isotonic = False
+    if cal_result_sklearn_isotonic:
+        print('Isotonic for {}'.format(METHOD))
+        for cate, conf in conf_dict.items():
+            print(cate, len(conf), len(target_dict[cate]))
+            logit = np_inv_sigmoid(conf)
+            dataset = np.concatenate((np.expand_dims(logit, axis=1), np.expand_dims(target_dict[cate],axis=1) ), axis=1)
+            df_iso = cal_results(IsotonicRegression, directory, dataset, {'y_min':0.0, 'y_max':1.0}, cate = cate, platt=False)
+            print(df_iso, '\n\n\n\n')
+    sklearn_isotonic = False
+    if sklearn_isotonic:
+        print('Isotonic for {}'.format(METHOD))
+        for cate, conf in conf_dict.items():
+            # if cate == 'under90' or cate== 'init_composite':
+            #     continue
+            print(cate, len(conf), len(target_dict[cate]))
+            logit = np_inv_sigmoid(val_conf_dict[cate])
+            testlogit = np_inv_sigmoid(conf)
+            train_end = int(len(logit) / 2.0)
+            m_kwargs = {'y_min':0.0, 'y_max':1.0, 'out_of_bounds':'clip'}
+
+            train_logit, train_y = logit[:train_end], val_target_dict[cate][:train_end]
+            val_logit, val_y = logit[train_end:], val_target_dict[cate][train_end:]
+
+            model = IsotonicRegression(**m_kwargs)
+            # model.fit_transform(train_logit, train_y)
+            model.fit_transform(logit, val_target_dict[cate])
+
+            is_1 = np.any(np.isnan(val_logit))
+            is_2 = np.any(np.isnan(val_y))
+            is_all_1 = np.all(np.isfinite(val_logit))
+            is_all_2 = np.all(np.isfinite(val_y))
+            if is_1 or is_1:
+                print(is_1, is_2, val_logit.shape, val_y.shape)
+            if not (is_all_1 & is_all_2):
+                print(is_all_1, is_all_2)
+            for i in val_logit:
+                if not np.isfinite(i):
+                    print('infi',i)
+                if np.isnan(i):
+                    print('nan',i)
+
+            val_score = model.score(val_logit, val_y)
+            print("score : {} {} : {}".format(METHOD, cate, val_score))
+            test_conf = model.predict(testlogit)
+            conf_dict[cate] = test_conf
+            del model
+    return conf_dict, val_conf_dict
+def load_conf_dict_and_plot(ROOT):
     sort_dict_binsize_cate_method_x = load_obj('cali_dict_x_values', ROOT+'plot_roc_all_in_one_fig/')
     sort_dict_binsize_cate_method_y = load_obj('cali_dict_y_values', ROOT+'plot_roc_all_in_one_fig/')
     calibration_histogram_one_graph(sort_dict_binsize_cate_method_x, sort_dict_binsize_cate_method_y, ROOT+'plot_roc_all_in_one_fig')
-    exit()
     CATE_roc_stat_dict = load_obj('CATE_roc_stat_dict', ROOT+'plot_roc_all_in_one_fig/')
     CATE_auc_dict = load_obj('CATE_auc_dict', ROOT+'plot_roc_all_in_one_fig/')
     CATE_ap_dict = load_obj('CATE_ap_dict', ROOT+'plot_roc_all_in_one_fig/')
-
     plot_all_roc_in_one_figure(CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, ROOT+'plot_roc_all_in_one_fig/')
-    exit()
 
 
+def Cal_axis(roc_plot_list, conf_dict, target_dict, ROOT):
+    total_histogram_xaxis_dict = dict()
+    total_histogram_yaxis_dict = dict()
+    for METHOD in roc_plot_list: 
+        directory = os.path.join(ROOT, METHOD)
+        return_yaxis_dict, return_xaxis_dict = calibration_histogram(conf_dict=conf_dict, target_dict=target_dict, save_dir=directory, method=METHOD)
+        return_yaxis_dict, return_xaxis_dict = sklearn_calibration_histogram(conf_dict=conf_dict, target_dict=target_dict, save_dir=directory, method=METHOD, nbins=25)
+        total_histogram_xaxis_dict[METHOD] = return_xaxis_dict
+        total_histogram_yaxis_dict[METHOD] = return_yaxis_dict
+    return (total_histogram_xaxis_dict, total_histogram_yaxis_dict)
 
-total_histogram_xaxis = dict()
-total_histogram_yaxis = dict()
-for METHOD in roc_plot_list :
-    directory = os.path.join(ROOT, METHOD)
-    outcome_cate_dict = {'under90', 'init_sbp', 'init_map', 'curr_sbp', 'curr_map'}
-    conf_dict = dict()
-    target_dict = dict()    
-
-    val_conf_dict = dict()
-    val_target_dict = dict()    
-    # load txt
-    for i, (outcome_cate) in enumerate(outcome_cate_dict):
-        confidence_txt_dir = directory+'/conf/conf_'+outcome_cate+'.txt'
-        with open(confidence_txt_dir, 'r') as f:
-            lines = f.readlines()
-            conf = [float(line.split('\t')[0]) for line in lines]
-            conf = np.asarray(conf)
-            target = [ float(line.split('\t')[1]) for line in lines ]
-            target = np.asarray(target)
-
-            conf_dict[outcome_cate] = conf
-            target_dict[outcome_cate] = target
-    
-    for i, (outcome_cate) in enumerate(outcome_cate_dict):
-        confidence_txt_dir = directory+'/conf/val/conf_'+outcome_cate+'.txt'
-        with open(confidence_txt_dir, 'r') as f:
-            lines = f.readlines()
-            conf = [float(line.split('\t')[0]) for line in lines]
-            conf = np.asarray(conf)
-            target = [ float(line.split('\t')[1]) for line in lines ]
-            target = np.asarray(target)
-
-
-            val_conf_dict[outcome_cate] = conf
-            val_target_dict[outcome_cate] = target
-    
-                    
-
-        
-
-    # 5-outcome -> 3-outcome
-    if MODE == 'Composite':
-        conf_dict, target_dict = composite(conf_dict, target_dict)
-        val_conf_dict, val_target_dict = composite(val_conf_dict, val_target_dict)
-        # # init
-        # conf_init_sbp = conf_dict['init_sbp']
-        # conf_init_map = conf_dict['init_map']
-        # conf_init_compo = np.zeros_like(conf_init_sbp)
-        # target_init_compo = np.zeros_like(conf_init_sbp)
-        # if len(conf_init_sbp) != len(conf_init_map):
-        #     print('error -> len(conf_init_sbp){} != len(conf_init_map){}'.format(len(conf_init_sbp), len(conf_init_map)))
-        #     assert len(conf_init_sbp) != len(conf_init_map)
-        # for i in range(len(conf_init_sbp)):
-        #     target_init_compo[i] = np.logical_or(target_dict['init_sbp'][i], target_dict['init_map'][i]).astype(float)
-        #     if conf_init_sbp[i] >= conf_init_map[i]:
-        #         conf_init_compo[i] = conf_init_sbp[i]
-        #     else:
-        #         conf_init_compo[i] = conf_init_map[i]
-        # conf_dict['init_composite'] = conf_init_compo
-        # target_dict['init_composite'] = target_init_compo
-
-
-        # # present (current)
-        # conf_curr_sbp = conf_dict['curr_sbp']
-        # conf_curr_map = conf_dict['curr_map']
-        # conf_curr_compo = np.zeros_like(conf_curr_sbp)
-        # target_curr_compo = np.zeros_like(conf_init_sbp)
-        # if len(conf_curr_sbp) != len(conf_curr_map):
-        #     print('error -> len(conf_curr_sbp){} != len(conf_curr_map){}'.format(conf_curr_sbp, conf_curr_map))
-        #     assert len(conf_curr_sbp) != len(conf_curr_map)
-        # for i in range(len(conf_curr_sbp)):
-        #     target_curr_compo[i] = np.logical_or(target_dict['curr_sbp'][i], target_dict['curr_map'][i]).astype(float)
-        #     if conf_curr_sbp[i] >= conf_curr_map[i]:
-        #         conf_curr_compo[i] = conf_curr_sbp[i]
-        #     else:
-        #         conf_curr_compo[i] = conf_curr_map[i]
-        # conf_dict['curr_composite'] = conf_curr_compo
-        # target_dict['curr_composite'] = target_curr_compo
-
-        # del conf_dict['init_sbp'], conf_dict['init_map'], conf_dict['curr_sbp'], conf_dict['curr_map']
-        # del target_dict['init_sbp'], target_dict['init_map'], target_dict['curr_sbp'], target_dict['curr_map']
-
-    else:
-        print('noooootttt yet')
-        exit()
-
-    calibration = False
-    if calibration:
-        print('\t|||| Calibration....')
-        heuristic_calib = False
-        if heuristic_calib:
-            print("{} heuristic calibration\n".format(METHOD))
-            if METHOD == 'MLP':
-                for key, item in conf_dict.items():
-                    print()
-                    print(key, max(item))
-                    if key == 'under90' :
-                        item /= 0.9399870538711548
-                        item = np.clip(item, 0, 0.999999999999)
-                        cal_idx = item > 0.9995
-                        rand_ = np.random.uniform(-0.11, 0.11, len(item[cal_idx]))
-                        item[cal_idx] = 0.4819532908704883 + rand_
-                        conf_dict[key] = item
-
-                        val_conf_dict[key] /= 0.9399870538711548
-                        val_conf_dict[key] = np.clip(val_conf_dict[key], 0, 0.999999999999)
-                        cal_idx = val_conf_dict[key] > 0.9995
-                        rand_ = np.random.uniform(-0.11, 0.11, len(val_conf_dict[key][cal_idx]))
-                        val_conf_dict[key][cal_idx] = 0.4819532908704883 + rand_
-                        val_conf_dict[key] = val_conf_dict[key]
-                    elif key == 'curr_composite' :
-                        cal_idx = item >= 0.98
-                        rand_ = np.random.uniform(-0.11, 0.11, len(item[cal_idx]))
-                        item[cal_idx] = 0.300 + rand_
-                        item /= 0.96
-                        item = np.clip(item, 0, 0.99999)
-                        conf_dict[key] = item
-
-                        cal_idx = val_conf_dict[key] >= 0.98
-                        rand_ = np.random.uniform(-0.11, 0.11, len(val_conf_dict[key][cal_idx]))
-                        val_conf_dict[key][cal_idx] = 0.300 + rand_
-                        val_conf_dict[key] /= 0.96
-                        val_conf_dict[key] = np.clip(val_conf_dict[key], 0, 0.9999)
-                        val_conf_dict[key] = val_conf_dict[key]
-                    
-
-
-                    # with open(directory+'/conf/conf_'+key+'_calibration.txt', 'w') as f:
-                    #     for i, conf in enumerate(conf_dict[key]):
-                    #         f.write('{}\t{}\n'.format(conf, target_dict[key][i]))
-                    # exit()
-                    # num_bin = 100
-                    # for i in range(num_bin):
-                    #     bin_size = 0.05 / 100.0
-                    #     idx_s = (item>0.95+bin_size*i) & (item<=0.95+bin_size*(i+1))
-                    #     print('{:.4f} - {:.4f}'.format(0.95+bin_size*i, 0.95+bin_size*(i+1)), '\t\t',sum(idx_s), sum(target_dict[key][idx_s]))
-                    # exit()
-            # elif METHOD == 'LightGBM':
-            #     for key, item in conf_dict.items():
-                    
-            #         print()
-            #         print(key, max(item))
-            #         if key == 'under90' :
-            #             item /= 0.9707179330143322
-            #         elif key == 'init_composite':
-            #             item /= 0.9919727681043224
-            #         else:
-            #             item /= 0.9519446746955348
-            #         item = np.clip(item, 0, 1.0)
-            #     #     cal_idx = item > 0.9995
-            #     #     item[cal_idx] = 0.4819532908704883
-            #         conf_dict[key] = item
-            # elif METHOD == 'LogisticRegression':
-            #     for key, item in conf_dict.items():
-            #         if key == 'under90' :
-            #             item /= 0.9999611147798186
-            #         elif key == 'init_composite':
-            #             item /= 0.9999611147798186
-            #         else:
-            #             item /= 0.9937735331714693
-
-            #         item = np.clip(item, 0, 1.0)
-            #     #     cal_idx = item > 0.9995
-            #     #     item[cal_idx] = 0.4819532908704883
-            #         conf_dict[key] = item
-            #         # with open(directory+'/conf/conf_'+key+'_calibration.txt', 'w') as f:
-            #         #     for i, conf in enumerate(conf_dict[key]):
-            #         #         f.write('{}\t{}\n'.format(conf, target_dict[key][i]))
-            #     # exit()
-
-            # elif METHOD == 'RNN':
-            #     for key, item in conf_dict.items():
-            #         print()
-            #         print(key, max(item))
-            #         if key == 'under90' :
-            #             item = -1. * np.log(((1. / item) - 1.))
-            #         elif key == 'init_composite':
-            #             item /= 0.9970881342887878
-            #             # item += 0.002
-            #         else:
-            #             item = item
-            #             # item += 0.01
-            #             under_select = (item<0.30)
-            #             item[under_select] = item[under_select] / 0.90
-            #             # item += 0.02
-            #             # item /= 0.990896
-            #         item = np.clip(item, 0, 1.0)
-            #         conf_dict[key] = item
-                    # with open(directory+'/conf/conf_'+key+'_calibration.txt', 'w') as f:
-                    #     for i, conf in enumerate(conf_dict[key]):
-                    #         f.write('{}\t{}\n'.format(conf, target_dict[key][i]))
-                    # num_bin = 100
-                    # for i in range(num_bin):
-                    #     bin_size = 0.05 / 100.0
-                    #     idx_s = (item>0.95+bin_size*i) & (item<=0.95+bin_size*(i+1))
-                    #     print('{:.4f} - {:.4f}'.format(0.95+bin_size*i, 0.95+bin_size*(i+1)), '\t\t',sum(idx_s), sum(target_dict[key][idx_s]))
-                    # exit()
-        pre_learned_platt_scaling = False
-        if pre_learned_platt_scaling : 
-            print('Platt scaling / using learned parameter')
-            for cate, method_dict in CATE_cali_dict.items():
-                for method_, [a,b] in method_dict.items():
-                    if method_ == METHOD:
-                        print(cate, method_)
-                        temp = np_inv_sigmoid(conf_dict[cate])
-                        temp = a*temp + b
-                        temp = np_sigmoid(temp)
-                        conf_dict[cate] = temp
-        platt_scaling = False
-        if platt_scaling :  # Platt scaling
-            print('find : a,b for {}'.format(METHOD))
-            for cate, conf in conf_dict.items():
-                print(cate, len(conf), len(target_dict[cate]))
-                dataset = np.concatenate((np.expand_dims(conf, axis=1), np.expand_dims(target_dict[cate],axis=1) ), axis=1)
-                dataloader = DataLoader(dataset=dataset, batch_size=20000, shuffle=True)
-                learn = Learnable().cuda()
-                # optim = torch.optim.SGD([learn.a, learn.b] , lr=0.0001)
-                optim = torch.optim.Adam([learn.a, learn.b] , lr=1e-3)
-                print('{} learn {}'.format(METHOD, cate))
-                
-                for i in range(20):
-                    for j, data in enumerate(dataloader):
-                        optim.zero_grad()
-                        ece = learn.forward(data[:,0], data[:,1])
-                        ece.backward()
-                        optim.step()
-                a,b,_ = learn.return_result()
-                print(a,b)
-                ece_final = learn.cal_ece(a.detach().cpu().numpy(),b.detach().cpu().numpy(), conf, target_dict[cate])
-                ece_original = learn.cal_ece(1.0, 0.0, conf, target_dict[cate])
-                print(ece_final, ece_original)
-                temp = np_inv_sigmoid(conf_dict[cate])
-                temp = a.item() * temp + b.item()
-                temp = np_sigmoid(temp)
-                conf_dict[cate] = temp
-        cal_result_sklearn_isotonic = False
-        if cal_result_sklearn_isotonic:
-            print('Isotonic for {}'.format(METHOD))
-            for cate, conf in conf_dict.items():
-                print(cate, len(conf), len(target_dict[cate]))
-                logit = np_inv_sigmoid(conf)
-                dataset = np.concatenate((np.expand_dims(logit, axis=1), np.expand_dims(target_dict[cate],axis=1) ), axis=1)
-                df_iso = cal_results(IsotonicRegression, directory, dataset, {'y_min':0.0, 'y_max':1.0}, cate = cate, platt=False)
-                # df_iso = cal_results(IsotonicRegression, directory, dataset, {'y_min':0, 'y_max':1}, cate = cate)
-                print(df_iso, '\n\n\n\n')
-        sklearn_isotonic = False
-        if sklearn_isotonic:
-            print('Isotonic for {}'.format(METHOD))
-            for cate, conf in conf_dict.items():
-                # if cate == 'under90' or cate== 'init_composite':
-                #     continue
-                print(cate, len(conf), len(target_dict[cate]))
-                logit = np_inv_sigmoid(val_conf_dict[cate])
-                testlogit = np_inv_sigmoid(conf)
-                train_end = int(len(logit) / 2.0)
-                m_kwargs = {'y_min':0.0, 'y_max':1.0, 'out_of_bounds':'clip'}
-
-                train_logit, train_y = logit[:train_end], val_target_dict[cate][:train_end]
-                val_logit, val_y = logit[train_end:], val_target_dict[cate][train_end:]
-
-                model = IsotonicRegression(**m_kwargs)
-                # model.fit_transform(train_logit, train_y)
-                model.fit_transform(logit, val_target_dict[cate])
-
-                is_1 = np.any(np.isnan(val_logit))
-                is_2 = np.any(np.isnan(val_y))
-                is_all_1 = np.all(np.isfinite(val_logit))
-                is_all_2 = np.all(np.isfinite(val_y))
-                if is_1 or is_1:
-                    print(is_1, is_2, val_logit.shape, val_y.shape)
-                if not (is_all_1 & is_all_2):
-                    print(is_all_1, is_all_2)
-                for i in val_logit:
-                    if not np.isfinite(i):
-                        print('infi',i)
-                    if np.isnan(i):
-                        print('nan',i)
-
-                val_score = model.score(val_logit, val_y)
-                print("score : {} {} : {}".format(METHOD, cate, val_score))
-                test_conf = model.predict(testlogit)
-                conf_dict[cate] = test_conf
-                del model
-
-    return_yaxis_dict, return_xaxis_dict = calibration_histogram(conf_dict=conf_dict, target_dict=target_dict, save_dir=directory, method=METHOD)
-    return_yaxis_dict, return_xaxis_dict = sklearn_calibration_histogram(conf_dict=conf_dict, target_dict=target_dict, save_dir=directory, method=METHOD, nbins=25)
-    
-    
-    total_histogram_xaxis[METHOD] = return_xaxis_dict
-    total_histogram_yaxis[METHOD] = return_yaxis_dict
-
-    print('\t|||| confusion matrix....')
-    confusion_matrix_with_threshold(conf_dict=conf_dict, target_dict=target_dict, save_dir=directory)
-    # exit()
-    
-    auc_dict, ap_dict, stat_dict = confidence_save_and_cal_auroc(conf_dict, target_dict, 'Test', directory, 0, 0, cal_roc=True)
-# exit()
+def make_result_each_method(roc_plot_list, conf_dict, CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, target_dict, ROOT, save_obj_FLAG=True):
+    for METHOD in roc_plot_list: 
+        directory = os.path.join(ROOT, METHOD)
+        print('\t|||| confusion matrix....')
+        confusion_matrix_with_threshold(conf_dict=conf_dict, target_dict=target_dict, save_dir=directory)
+        auc_dict, ap_dict, stat_dict = confidence_save_and_cal_auroc(conf_dict, target_dict, 'Test', directory, 0, 0, cal_roc=True)
     for key, value in stat_dict.items():
         CATE_roc_stat_dict[key][METHOD] = stat_dict[key]
         CATE_auc_dict[key][METHOD] = auc_dict[key]
         CATE_ap_dict[key][METHOD] = ap_dict[key]
-    
-    save_obj(CATE_roc_stat_dict, 'CATE_roc_stat_dict', ROOT+'plot_roc_all_in_one_fig/')
-    save_obj(CATE_auc_dict, 'CATE_auc_dict', ROOT+'plot_roc_all_in_one_fig/')
-    save_obj(CATE_ap_dict, 'CATE_ap_dict', ROOT+'plot_roc_all_in_one_fig/')
+
+    if save_obj_FLAG:
+        save_obj(CATE_roc_stat_dict, 'CATE_roc_stat_dict', ROOT+'plot_roc_all_in_one_fig/')
+        save_obj(CATE_auc_dict, 'CATE_auc_dict', ROOT+'plot_roc_all_in_one_fig/')
+        save_obj(CATE_ap_dict, 'CATE_ap_dict', ROOT+'plot_roc_all_in_one_fig/')
+    return CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict
+
+def make_sort_dict_binsize(total_histogram_xaxis_dict, total_histogram_yaxis_dict, ROOT):
+    sort_dict_binsize_cate_method_x = dict()
+    sort_dict_binsize_cate_method_y = dict()
+    method_list = list()
+    for method, bin_wise_dict in total_histogram_xaxis_dict.items():
+        method_list.append(method)
+        for bin_size, cate_wise_dict in bin_wise_dict.items() :
+            sort_dict_binsize_cate_method_y[bin_size] = dict()
+            sort_dict_binsize_cate_method_x[bin_size] = dict()
+            for category, xaxis_bins in cate_wise_dict.items():
+                sort_dict_binsize_cate_method_y[bin_size][category] = dict()
+                sort_dict_binsize_cate_method_x[bin_size][category] = dict()
+
+    for binsize, binwise_dict in sort_dict_binsize_cate_method_y.items():
+        print('bin_size : ', binsize)
+        for cate, cate_wise_dict in binwise_dict.items():
+            for method in method_list :
+                sort_dict_binsize_cate_method_y[binsize][cate][method] = total_histogram_yaxis_dict[method][binsize][cate]
+                sort_dict_binsize_cate_method_x[binsize][cate][method] = total_histogram_xaxis_dict[method][binsize][cate]
+
+    save_obj(sort_dict_binsize_cate_method_y, 'cali_dict_y_values', ROOT+'plot_roc_all_in_one_fig/')
+    save_obj(sort_dict_binsize_cate_method_x, 'cali_dict_x_values', ROOT+'plot_roc_all_in_one_fig/')
+    return sort_dict_binsize_cate_method_x, sort_dict_binsize_cate_method_y
 
 
 
-sort_dict_binsize_cate_method_x = dict()
-sort_dict_binsize_cate_method_y = dict()
-method_list = list()
-for method, bin_wise_dict in total_histogram_xaxis.items():
-    method_list.append(method)
-    for bin_size, cate_wise_dict in bin_wise_dict.items() :
-        sort_dict_binsize_cate_method_y[bin_size] = dict()
-        sort_dict_binsize_cate_method_x[bin_size] = dict()
-        for category, xaxis_bins in cate_wise_dict.items():
-            sort_dict_binsize_cate_method_y[bin_size][category] = dict()
-            sort_dict_binsize_cate_method_x[bin_size][category] = dict()
 
-for binsize, binwise_dict in sort_dict_binsize_cate_method_y.items():
-    print('bin_size : ', binsize)
-    for cate, cate_wise_dict in binwise_dict.items():
-        for method in method_list :
-            sort_dict_binsize_cate_method_y[binsize][cate][method] = total_histogram_yaxis[method][binsize][cate]
-            sort_dict_binsize_cate_method_x[binsize][cate][method] = total_histogram_xaxis[method][binsize][cate]
+def main():
+    target_name_dict = {'IDH1':0, 'IDH2':1, 'IDH3':2, 'IDH4':3, 'IDH5':4}
 
-save_obj(sort_dict_binsize_cate_method_y, 'cali_dict_y_values', ROOT+'plot_roc_all_in_one_fig/')
-save_obj(sort_dict_binsize_cate_method_x, 'cali_dict_x_values', ROOT+'plot_roc_all_in_one_fig/')
+    ROOT = './fig/'
+    roc_plot_list = ['RNN', 'LightGBM' , 'LogisticRegression']
 
-calibration_histogram_one_graph(sort_dict_binsize_cate_method_x, sort_dict_binsize_cate_method_y, ROOT+'plot_roc_all_in_one_fig')
-# exit()
-plot_all_roc_in_one_figure(CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, ROOT+'plot_roc_all_in_one_fig/')
+    Load_obj_and_plot_FLAG = False
+    apply_cal_param_FLAG = False
+    calibration_FLAG = False
+    save_obj_FLAG = True
 
+    if Load_obj_and_plot_FLAG: load_conf_dict_and_plot(ROOT)
+    CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, CATE_cali_dict = make_dict(target_name_dict)
+    if apply_cal_param_FLAG:
+        CATE_cali_dict = apply_platt_cal_param(CATE_cali_dict, remove_mode='no_remove')
+
+    conf_dict, target_dict = load_txt_for_conf_and_target(roc_plot_list, calibration_FLAG=calibration_FLAG)
+    (total_histogram_xaxis_dict, total_histogram_yaxis_dict) = Cal_axis(roc_plot_list, conf_dict, target_dict, ROOT)
+    CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict = make_result_each_method(roc_plot_list, conf_dict, CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, target_dict, ROOT, save_obj_FLAG=save_obj_FLAG)
+    sort_dict_binsize_cate_method_x, sort_dict_binsize_cate_method_y = make_sort_dict_binsize(total_histogram_xaxis_dict, total_histogram_yaxis_dict, ROOT)
+    calibration_histogram_one_graph(sort_dict_binsize_cate_method_x, sort_dict_binsize_cate_method_y, ROOT+'plot_roc_all_in_one_fig')
+    plot_all_roc_in_one_figure(CATE_roc_stat_dict, CATE_auc_dict, CATE_ap_dict, ROOT+'plot_roc_all_in_one_fig/')
+
+
+main()
